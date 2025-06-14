@@ -1,30 +1,30 @@
-// server.js
+// backend/server.js
 const express = require('express');
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+const authRoutes = require('./routes/auth');
 
+dotenv.config();
 const app = express();
 const PORT = 5000;
 
-// Middleware
+// Middleware to parse JSON
 app.use(express.json());
 
-// MongoDB connection string
-const MONGO_URI = 'mongodb+srv://pams:pams2025@pams.eawhvlc.mongodb.net/?retryWrites=true&w=majority&appName=PAMS'; // Replace with your DB name or Atlas URI
-
 // Connect to MongoDB
-mongoose.connect(MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ MongoDB connected successfully'))
+  .catch((err) => console.error('❌ MongoDB connection error:', err));
 
-// Routes
+// Test route
 app.get('/', (req, res) => {
-  res.send('Hello from Express with MongoDB!');
+  res.send('🚀 Server is running');
 });
 
-// Start the server
+// Routes
+app.use('/api/auth', authRoutes);
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
