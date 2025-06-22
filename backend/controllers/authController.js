@@ -6,10 +6,10 @@ const sendEmail = require('../utils/sendEmail');
 
 //REGISTER
 const register = async (req, res) => {
-  const { username, email, first_name, last_name, password_hash, role } = req.body;
+  const { student_id, email, first_name, last_name, password, program, department } = req.body;
 
-  if (!username || !email || !first_name || !last_name || !password_hash || !role) {
-    return res.status(400).json({ message: 'All fields are required' });
+  if (!student_id || !email || !first_name || !last_name || !password || !program || !department) {
+    return res.status(400).json({ message: 'All fields are required' }); // This now matches common naming
   }
 
   try {
@@ -18,15 +18,17 @@ const register = async (req, res) => {
       return res.status(400).json({ message: 'Email already registered' });
     }
 
-    const hashedPassword = await bcrypt.hash(password_hash, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = new User({
-      username,
+      student_id,
       email,
       first_name,
       last_name,
-      password_hash: hashedPassword,
-      role
+      program,
+      department,
+      password_hash: hashedPassword, 
+      role: 'Student'
     });
 
     await user.save();
@@ -37,11 +39,13 @@ const register = async (req, res) => {
   }
 };
 
+
+
 //LOGIN
 const login = async (req, res) => {
-  const { email, password_hash } = req.body;
+  const { email, password } = req.body;
 
-  if (!email || !password_hash) {
+  if (!email || !password) {
     return res.status(400).json({ message: 'All fields are required' });
   }
 
@@ -49,9 +53,16 @@ const login = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: 'Invalid email or password' });
 
+    // Check if password_hash is present
+    if (!user.password_hash) {
+      return res.status(400).json({ message: 'Account is missing a password hash' });
+    }
+
+    // Compare using user.password_hash
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) return res.status(400).json({ message: 'Invalid email or password' });
 
+    // Issue JWT
     const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
       expiresIn: '1d',
     });
@@ -62,6 +73,7 @@ const login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 //FORGOT PASSWORD
 const forgotPassword = async (req, res) => {
@@ -114,12 +126,11 @@ const resetPassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(req.body.password, 10);
 
-    // ✅ Do a direct update
     await User.updateOne(
       { _id: user._id },
       {
         $set: {
-          password_hash: hashedPassword,
+          password: hashedPassword,
         },
         $unset: {
           resetPasswordToken: "",

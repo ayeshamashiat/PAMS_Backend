@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/userRoutes');
 const studentRoutes = require('./routes/studentRoutes');
+const cors = require("cors");
 
 
 dotenv.config();
@@ -14,7 +15,7 @@ const PORT = 5000;
 // Middleware to parse JSON
 app.use(express.json());
 
-const cors = require("cors");
+
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 
 
