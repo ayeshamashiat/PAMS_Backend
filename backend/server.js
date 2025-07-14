@@ -30,6 +30,7 @@ app.get('/', (req, res) => {
 });
 
 // Routes
+app.use('/api/admin', require('./routes/adminRoutes'));
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/students', studentRoutes);

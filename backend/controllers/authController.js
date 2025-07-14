@@ -1,71 +1,31 @@
+// No register function here at all
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const User = require('../models/user'); 
+const User = require('../models/user');
 const sendEmail = require('../utils/sendEmail');
 
-//REGISTER
-const register = async (req, res) => {
-  const { student_id, email, first_name, last_name, password, program, department } = req.body;
-
-  if (!student_id || !email || !first_name || !last_name || !password || !program || !department) {
-    return res.status(400).json({ message: 'All fields are required' }); // This now matches common naming
-  }
-
-  try {
-    const exists = await User.findOne({ email });
-    if (exists) {
-      return res.status(400).json({ message: 'Email already registered' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = new User({
-      student_id,
-      email,
-      first_name,
-      last_name,
-      program,
-      department,
-      password_hash: hashedPassword, 
-      role: 'Student'
-    });
-
-    await user.save();
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) {
-    console.error('Error during registration:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
-
-
-
-//LOGIN
+// LOGIN
 const login = async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
+  if (!email || !password)
     return res.status(400).json({ message: 'All fields are required' });
-  }
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid email or password' });
+    if (!user)
+      return res.status(400).json({ message: 'Invalid email or password' });
 
-    // Check if password_hash is present
-    if (!user.password_hash) {
-      return res.status(400).json({ message: 'Account is missing a password hash' });
-    }
-
-    // Compare using user.password_hash
     const isMatch = await bcrypt.compare(password, user.password_hash);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid email or password' });
+    if (!isMatch)
+      return res.status(400).json({ message: 'Invalid email or password' });
 
-    // Issue JWT
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
-      expiresIn: '1d',
-    });
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
 
     res.json({ token });
   } catch (err) {
@@ -74,30 +34,26 @@ const login = async (req, res) => {
   }
 };
 
-
-//FORGOT PASSWORD
+// FORGOT PASSWORD
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
-
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'No user with that email' });
+    if (!user)
+      return res.status(404).json({ message: 'No user with that email' });
 
     const resetToken = crypto.randomBytes(20).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(resetToken)
+      .digest('hex');
 
-    await User.updateOne(
-      { email },
-      {
-        $set: {
-          resetPasswordToken: crypto.createHash('sha256').update(resetToken).digest('hex'),
-          resetPasswordExpires: Date.now() + 15 * 60 * 1000,
-        },
-      }
-    );
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 mins
+    await user.save();
 
     const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-    const message = `You requested a password reset.\n\nClick this link to reset your password:\n${resetUrl}\n\nIf you did not request this, please ignore this email.`;
+    const message = `Click here to reset your password:\n${resetUrl}`;
 
     await sendEmail({
       email: user.email,
@@ -106,49 +62,43 @@ const forgotPassword = async (req, res) => {
     });
 
     res.json({ message: 'Reset password email sent' });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-//RESET PASSWORD
+// RESET PASSWORD
 const resetPassword = async (req, res) => {
   const resetToken = req.params.token;
-  const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  const hashedToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
 
   try {
     const user = await User.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: Date.now() },
     });
-    if (!user) return res.status(400).json({ message: 'Invalid or expired token' });
+    if (!user)
+      return res.status(400).json({ message: 'Invalid or expired token' });
 
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    const newPasswordHash = await bcrypt.hash(req.body.password, 10);
+    user.password_hash = newPasswordHash;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
 
-    await User.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          password: hashedPassword,
-        },
-        $unset: {
-          resetPasswordToken: "",
-          resetPasswordExpires: "",
-        },
-      }
-    );
+    await user.save();
 
     res.json({ message: 'Password reset successful' });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-
 module.exports = {
-  register,
   login,
   forgotPassword,
   resetPassword,
