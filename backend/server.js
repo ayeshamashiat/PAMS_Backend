@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/userRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const createAdminUser = require('./utils/createAdminUser');
 const cors = require("cors");
 
 dotenv.config();
@@ -20,8 +21,18 @@ app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected successfully'))
-  .catch((err) => console.error('❌ MongoDB connection error:', err));
+  .then(async () => {
+    console.log('✅ MongoDB connected');
+
+    await createAdminUser();
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running at http://localhost:${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+});
 
 // Test route
 app.get('/', (req, res) => {
@@ -33,8 +44,3 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/students', studentRoutes);
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
