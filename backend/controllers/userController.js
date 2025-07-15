@@ -13,6 +13,7 @@ const createUserByAdmin = async (req, res) => {
       user_id,
       email,
       password,
+      confirm_password,
       first_name,
       last_name,
       program,
@@ -21,8 +22,16 @@ const createUserByAdmin = async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!user_id || !email || !password || !first_name || !last_name || !program || !department || !role) {
+    if (
+      !user_id || !email || !password || !confirm_password ||
+      !first_name || !last_name || !program || !department || !role
+    ) {
       return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    // Check password confirmation
+    if (password !== confirm_password) {
+      return res.status(400).json({ message: 'Passwords do not match' });
     }
 
     // Check if email or user_id is already in use
@@ -50,7 +59,7 @@ const createUserByAdmin = async (req, res) => {
     if (role === 'Student') {
       const student = new Student({
         user_id: savedUser._id,
-        student_number: user_id, // Assuming user_id doubles as student_number
+        student_number: user_id,
         admission_year: new Date().getFullYear()
       });
       await student.save();
@@ -58,7 +67,7 @@ const createUserByAdmin = async (req, res) => {
       const FacultyModel = require('../models/faculty');
       const faculty = new FacultyModel({
         user_id: savedUser._id,
-        employee_id: user_id // Assuming user_id doubles as employee_id
+        employee_id: user_id
       });
       await faculty.save();
     } else if (role === 'PGC') {
@@ -74,11 +83,12 @@ const createUserByAdmin = async (req, res) => {
   }
 };
 
+// Block self-registration
 const register = (req, res) => {
   res.status(403).json({ message: 'Self-registration is disabled. Please contact an administrator.' });
 };
 
 module.exports = {
   createUserByAdmin,
-  register // Exported in case route exists but returns 403
+  register
 };

@@ -11,7 +11,7 @@ const protect = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { id: user._id, role: user.role }
+    req.user = decoded;
 
     next();
   } catch (err) {
@@ -34,8 +34,45 @@ const adminOnly = (req, res, next) => {
   next();
 };
 
+const User = require('../models/user');
+
+const requireAuth = () => async (req, res, next) => {
+  const token = req.header('Authorization')?.replace('Bearer ', '');
+
+  if (!token) return res.status(401).json({ message: 'Unauthorized: No token provided' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) return res.status(401).json({ message: 'Unauthorized: Invalid token' });
+
+    req.user = user; 
+    next();
+  } catch (err) {
+    return res.status(401).json({ message: 'Unauthorized: Token error' });
+  }
+};
+
+//wrapper fr allowed roles
+const requireRole = (...allowedRoles) => {
+  return (req, res, next) => {
+    if (!req.user || !allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient role access' });
+    }
+    next();
+  };
+};
+
+module.exports = {
+  
+};
+
+
 module.exports = {
   protect,
   authorizeSelf,
-  adminOnly
+  adminOnly,
+  requireAuth,
+  requireRole
 };
