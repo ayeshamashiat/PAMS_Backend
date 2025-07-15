@@ -268,25 +268,23 @@ const createAdmin = async (req, res) => {
 
     const savedUser = await newUser.save();
 
-    // Optionally, if you want to save admin-specific info, create a separate Admin model here
-
     // Send email with credentials
     await sendEmail({
       email,
       subject: 'Your Admin Account Credentials',
       message: `Dear ${first_name},
 
-Your admin account has been created.
+      Your admin account has been created.
 
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
+      Login credentials:
+      Email: ${email}
+      Password: ${rawPassword}
 
-Please change your password after logging in.
+      Please change your password after logging in.
 
-Regards,
-Admin Team`
-    });
+      Regards,
+      Admin Team`
+    });     
 
     // Respond with credentials
     res.status(201).json({
