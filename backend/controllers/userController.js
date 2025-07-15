@@ -1,46 +1,43 @@
 // File: controllers/userController.js
-
+const sendEmail = require('../utils/sendEmail');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user');
 const Student = require('../models/student');
 const Faculty = require('../models/faculty');
 // const PGC = require('../models/pgc'); // PGC model placeholder
 
-// Admin creates a user manually
-const createUserByAdmin = async (req, res) => {
+// Admin creates a student user manually
+const crypto = require('crypto'); // Use to generate secure random password
+
+// Helper to generate a random password
+const generatePassword = () => {
+  return crypto.randomBytes(6).toString('base64'); // 8-char random string
+};
+
+// Admin creates a student user manually (with generated password)
+const createStudent = async (req, res) => {
   try {
     const {
       user_id,
       email,
-      password,
-      confirm_password,
       first_name,
       last_name,
       program,
       department,
-      role
+      academic_year
     } = req.body;
 
-    // Validate required fields
-    if (
-      !user_id || !email || !password || !confirm_password ||
-      !first_name || !last_name || !program || !department || !role
-    ) {
+    if (!user_id || !email || !first_name || !last_name || !program || !department || !academic_year) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // Check password confirmation
-    if (password !== confirm_password) {
-      return res.status(400).json({ message: 'Passwords do not match' });
-    }
-
-    // Check if email or user_id is already in use
     const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const rawPassword = generatePassword(); // generate random password
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     const newUser = new User({
       user_id,
@@ -50,45 +47,132 @@ const createUserByAdmin = async (req, res) => {
       last_name,
       program,
       department,
-      role
+      role: 'Student'
     });
 
     const savedUser = await newUser.save();
 
-    // Automatically create stakeholder-specific model
-    if (role === 'Student') {
-      const student = new Student({
-        user_id: savedUser._id,
-        student_number: user_id,
-        admission_year: new Date().getFullYear()
-      });
-      await student.save();
-    } else if (role === 'Faculty') {
-      const FacultyModel = require('../models/faculty');
-      const faculty = new FacultyModel({
-        user_id: savedUser._id,
-        employee_id: user_id
-      });
-      await faculty.save();
-    } else if (role === 'PGC') {
-      // Placeholder for future implementation
-      // const pgc = new PGC({ user_id: savedUser._id });
-      // await pgc.save();
-    }
+    const student = new Student({
+      user_id: savedUser._id,
+      student_number: user_id,
+      admission_year: academic_year,
+      current_semester: 1
+    });
+    await student.save();
 
-    res.status(201).json({ message: `${role} user created successfully` });
+    await sendEmail({
+      email,
+      subject: 'Your Student Account Credentials',
+      message: `Dear ${first_name},
+
+      Your student account has been created.
+
+      Login credentials:
+      Email: ${email}
+      Password: ${rawPassword}
+
+      Please change your password after logging in.
+
+      Regards,
+      Admin Team`
+    });
+
+    res.status(201).json({
+      message: 'Student created successfully',
+      credentials: {
+        email,
+        password: rawPassword
+      }
+    });
   } catch (error) {
-    console.error('Admin user creation error:', error);
+    console.error('Create student error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
 
-// Block self-registration
+// Admin creates a faculty user manually (with generated password)
+const createFaculty = async (req, res) => {
+  try {
+    const {
+      user_id,
+      email,
+      first_name,
+      last_name,
+      designation,
+      department
+    } = req.body;
+
+    if (!user_id || !email || !first_name || !last_name || !designation || !department) {
+      return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' });
+    }
+
+    const rawPassword = generatePassword();
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+    const newUser = new User({
+      user_id,
+      email,
+      password_hash: hashedPassword,
+      first_name,
+      last_name,
+      department,
+      program: '',
+      role: 'Faculty'
+    });
+
+    const savedUser = await newUser.save();
+
+    const FacultyModel = require('../models/faculty');
+    const faculty = new FacultyModel({
+      user_id: savedUser._id,
+      employee_id: user_id,
+      designation
+    });
+    await faculty.save();
+
+    await sendEmail({
+      email,
+      subject: 'Your Faculty Account Credentials',
+      message: `Dear ${first_name},
+
+      Your faculty account has been created.
+
+      Login credentials:
+      Email: ${email}
+      Password: ${rawPassword}
+
+      Please change your password after logging in.
+
+      Regards,
+      Admin Team`
+    });
+
+
+    res.status(201).json({
+      message: 'Faculty created successfully',
+      credentials: {
+        email,
+        password: rawPassword
+      }
+    });
+  } catch (error) {
+    console.error('Create faculty error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+
 const register = (req, res) => {
   res.status(403).json({ message: 'Self-registration is disabled. Please contact an administrator.' });
 };
 
 module.exports = {
-  createUserByAdmin,
+  createStudent,
+  createFaculty,
   register
 };

@@ -1,8 +1,11 @@
-// In routes/adminRoutes.js
 const express = require('express');
 const router = express.Router();
-const { createUserByAdmin } = require('../controllers/userController');
+const {
+  createStudent,
+  createFaculty
+} = require('../controllers/userController');
 
-router.post('/register-user', createUserByAdmin);
+router.post('/create-student', createStudent);
+router.post('/create-faculty', createFaculty);
 
 module.exports = router;
