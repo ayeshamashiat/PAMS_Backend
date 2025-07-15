@@ -21,5 +21,9 @@ router.post('/create-faculty', protect, adminOnly, createFaculty);
 router.post('/create-pgc', protect, adminOnly, createPGC);
 router.post('/create-admin', protect, adminOnly, createAdmin);
 
+router.get('/students', protect, adminOnly, getAllStudents);
+router.get('/faculty', protect, adminOnly, getAllFaculty);
+router.get('/pgc', protect, adminOnly, getAllPGC);
+
 
 module.exports = router;
