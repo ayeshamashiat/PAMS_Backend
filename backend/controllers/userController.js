@@ -7,10 +7,9 @@ const Faculty = require('../models/faculty');
 const crypto = require('crypto'); 
 
 const generatePassword = () => {
-  return crypto.randomBytes(6).toString('base64'); // 8-char random string
+  return crypto.randomBytes(6).toString('base64');
 };
 
-// Admin creates a student user manually (with generated password)
 const createStudent = async (req, res) => {
   try {
     const {
@@ -32,6 +31,7 @@ const createStudent = async (req, res) => {
       return res.status(409).json({ message: 'User already exists' });
     }
 
+    const rawPassword = generatePassword();
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
