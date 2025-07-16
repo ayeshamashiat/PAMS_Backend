@@ -32,7 +32,6 @@ const createStudent = async (req, res) => {
     }
 
     const rawPassword = generatePassword();
-    const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     const newUser = new User({
