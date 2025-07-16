@@ -247,16 +247,199 @@ Admin Team`
 };
 
 
+const getAllStudents = async (req, res) => {
+  try {
+    const studentsWithDetails = await User.aggregate([
+      { $match: { role: 'Student' } },
+      {
+        $lookup: {
+          from: 'students',
+          localField: '_id',
+          foreignField: 'user_id',
+          as: 'student_details'
+        }
+      },
+      {
+        $unwind: {
+          path: '$student_details',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'faculties',
+          localField: 'student_details.supervisor_id',
+          foreignField: '_id',
+          as: 'supervisor_info'
+        }
+      },
+      {
+        $unwind: {
+          path: '$supervisor_info',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'supervisor_info.user_id',
+          foreignField: '_id',
+          as: 'supervisor_user'
+        }
+      },
+      {
+        $unwind: {
+          path: '$supervisor_user',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          password_hash: 0, // Exclude password hash
+          'student_details.user_id': 0, // Exclude redundant user_id
+          'supervisor_user.password_hash': 0, // Exclude supervisor password
+          'supervisor_user.role': 0
+        }
+      },
+      {
+        $addFields: {
+          'student_details.supervisor_name': {
+            $concat: ['$supervisor_user.first_name', ' ', '$supervisor_user.last_name']
+          }
+        }
+      },
+      {
+        $sort: { first_name: 1, last_name: 1 }
+      }
+    ]);
 
+    res.status(200).json({
+      message: 'Students retrieved successfully',
+      count: studentsWithDetails.length,
+      students: studentsWithDetails
+    });
 
+  } catch (error) {
+    console.error('Get all students error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
 
-const register = (req, res) => {
-  res.status(403).json({ message: 'Self-registration is disabled. Please contact an administrator.' });
+const getAllFaculty = async (req, res) => {
+  try {
+    const facultyMembers = await User.aggregate([
+      { $match: { role: 'Faculty' } },
+      {
+        $lookup: {
+          from: 'faculties',
+          localField: '_id',
+          foreignField: 'user_id',
+          as: 'faculty_details'
+        }
+      },
+      {
+        $unwind: {
+          path: '$faculty_details',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'students',
+          localField: 'faculty_details._id',
+          foreignField: 'supervisor_id',
+          as: 'supervised_students'
+        }
+      },
+      {
+        $addFields: {
+          'faculty_details.actual_supervision_count': { $size: '$supervised_students' }
+        }
+      },
+      {
+        $project: {
+          password_hash: 0, // Exclude password hash
+          'faculty_details.user_id': 0, // Exclude redundant user_id
+          supervised_students: 0 // Remove the temporary array
+        }
+      },
+      {
+        $sort: { first_name: 1, last_name: 1 }
+      }
+    ]);
+
+    res.status(200).json({
+      message: 'Faculty members retrieved successfully',
+      count: facultyMembers.length,
+      faculty: facultyMembers
+    });
+
+  } catch (error) {
+    console.error('Get all faculty error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const getAllPGC = async (req, res) => {
+  try {
+    const pgcMembers = await User.aggregate([
+      { $match: { role: 'PGC' } },
+      {
+        $lookup: {
+          from: 'faculties',
+          localField: '_id',
+          foreignField: 'user_id',
+          as: 'faculty_details'
+        }
+      },
+      {
+        $unwind: {
+          path: '$faculty_details',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'students',
+          localField: 'faculty_details._id',
+          foreignField: 'supervisor_id',
+          as: 'supervised_students'
+        }
+      },
+      {
+        $addFields: {
+          'faculty_details.actual_supervision_count': { $size: '$supervised_students' }
+        }
+      },
+      {
+        $project: {
+          password_hash: 0, // Exclude password hash
+          'faculty_details.user_id': 0, // Exclude redundant user_id
+          supervised_students: 0 // Remove the temporary array
+        }
+      },
+      {
+        $sort: { first_name: 1, last_name: 1 }
+      }
+    ]);
+
+    res.status(200).json({
+      message: 'PGC members retrieved successfully',
+      count: pgcMembers.length,
+      pgc_members: pgcMembers
+    });
+
+  } catch (error) {
+    console.error('Get all PGC members error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 };
 
 module.exports = {
   createStudent,
   createFaculty,
   createPGC,
-  register
+  getAllStudents,
+  getAllFaculty,
+  getAllPGC
 };
