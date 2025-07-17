@@ -10,12 +10,12 @@ const {
 } = require('../controllers/userController');
 const { protect, adminOnly, requireRole } = require('../middleware/authMiddleware');
 
-router.post('/create-student', protect, adminOnly, createStudent);
-router.post('/create-faculty', protect, adminOnly, createFaculty);
-router.post('/create-pgc', protect, adminOnly, createPGC);
+router.post('/create-student', createStudent);
+router.post('/create-faculty', createFaculty);
+router.post('/create-pgc', createPGC);
 
-router.get('/students', protect, requireRole('Admin', 'PGC'), getAllStudents);
-router.get('/faculty', protect, requireRole('Admin', 'PGC'), getAllFaculty);
-router.get('/pgc', protect, adminOnly, getAllPGC);
+router.get('/students', getAllStudents);
+router.get('/faculty', getAllFaculty);
+router.get('/pgc', getAllPGC);
 
 module.exports = router;
