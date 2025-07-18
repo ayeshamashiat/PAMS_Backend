@@ -11,7 +11,7 @@ const cors = require("cors");
 
 dotenv.config();
 const app = express();
-const PORT = 5000;
+const PORT = 8080;
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); 
@@ -22,7 +22,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log('✅ MongoDB connected successfully');
     await createHardcodedAdmin(); // 
-    app.listen(process.env.PORT || 5000, () => {
+    app.listen(process.env.PORT || 8080, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
     });
   })
