@@ -246,6 +246,24 @@ Admin Team`
   }
 };
 
+const getAdminProfile = async (req, res) => {
+  try {
+    const user = req.user;
+
+    return res.status(200).json({
+      message: 'Admin profile fetched successfully',
+      email: user.email,
+      full_name: `${user.first_name} ${user.last_name}`,
+      department: user.department,
+      role: user.role
+    });
+  } catch (error) {
+    console.error('Error fetching admin profile:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
 
 const getAllStudents = async (req, res) => {
   try {
@@ -439,6 +457,7 @@ module.exports = {
   createStudent,
   createFaculty,
   createPGC,
+  getAdminProfile,
   getAllStudents,
   getAllFaculty,
   getAllPGC

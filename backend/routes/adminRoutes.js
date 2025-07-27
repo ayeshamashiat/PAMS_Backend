@@ -6,14 +6,17 @@ const {
   createPGC,
   getAllStudents,
   getAllFaculty,
-  getAllPGC
+  getAllPGC,
+  getAdminProfile
 } = require('../controllers/userController');
-const { protect, adminOnly, requireRole } = require('../middleware/authMiddleware');
+const { protect, adminOnly } = require('../middleware/authMiddleware');
+
 
 router.post('/create-student', createStudent);
 router.post('/create-faculty', createFaculty);
 router.post('/create-pgc', createPGC);
 
+router.get('/profile', protect, adminOnly, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
