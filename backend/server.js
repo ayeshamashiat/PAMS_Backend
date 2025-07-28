@@ -6,11 +6,11 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/userRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 const adminRoutes = require('./routes/adminRoutes');
-const cors = require("cors");
+const cors = require("cors"); 
 
 dotenv.config();
 const app = express();
-const PORT = 5000;
+const PORT = 8080;
 
 // Middleware to parse JSON
 app.use(express.json());
