@@ -5,6 +5,8 @@ const User = require('../models/user');
 const Student = require('../models/student');
 const Faculty = require('../models/faculty');
 const crypto = require('crypto'); 
+const fs = require('fs');
+const csv = require('csv-parser');
 
 const generatePassword = () => {
   return crypto.randomBytes(6).toString('base64');
@@ -85,6 +87,98 @@ Admin Team`
     res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+const uploadStudentsFromCSV = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'No file uploaded' });
+  }
+
+  const results = [];
+  const failed = [];
+
+  fs.createReadStream(req.file.path)
+    .pipe(csv())
+    .on('data', (data) => results.push(data))
+    .on('end', async () => {
+      for (const row of results) {
+        const {
+          user_id,
+          email,
+          first_name,
+          last_name,
+          program,
+          department,
+          academic_year
+        } = row;
+
+        if (!user_id || !email || !first_name || !last_name || !program || !department || !academic_year) {
+          failed.push({ user_id, reason: 'Missing required fields' });
+          continue;
+        }
+
+        try {
+          const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+          if (existingUser) {
+            failed.push({ user_id, reason: 'User already exists' });
+            continue;
+          }
+
+          const rawPassword = generatePassword();
+          const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+          const newUser = new User({
+            user_id,
+            email,
+            password_hash: hashedPassword,
+            first_name,
+            last_name,
+            department,
+            role: 'Student'
+          });
+
+          const savedUser = await newUser.save();
+
+          const student = new Student({
+            user_id: savedUser._id,
+            student_number: user_id,
+            program_id: program,
+            admission_year: academic_year,
+            current_semester: 1
+          });
+
+          await student.save();
+
+          await sendEmail({
+            email,
+            subject: 'Your Student Account Credentials',
+            message: `Dear ${first_name},
+
+Your student account has been created.
+
+Login credentials:
+Email: ${email}
+Password: ${rawPassword}
+
+Please change your password after logging in.
+
+Regards,
+Admin Team`
+          });
+
+        } catch (err) {
+          failed.push({ user_id, reason: err.message });
+        }
+      }
+
+      return res.status(201).json({
+        message: 'Bulk student upload completed',
+        total: results.length,
+        failed: failed.length,
+        errors: failed
+      });
+    });
+};
+
 
 
 // Admin creates a faculty user manually (with generated password)
@@ -455,6 +549,7 @@ const getAllPGC = async (req, res) => {
 
 module.exports = {
   createStudent,
+  uploadStudentsFromCSV,
   createFaculty,
   createPGC,
   getAdminProfile,
