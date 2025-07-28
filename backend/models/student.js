@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const studentSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   student_number: { type: String, required: true, unique: true },
-  program_id: { type: String, required: true, unique: true },
+  program_id: { type: String, required: true },
   admission_year: { type: Number, required: true },
   current_semester: { type: Number, default: 1 },
   cgpa: { type: Number, default: 0.0 },
