@@ -1,40 +1,38 @@
-// backend/server.js 
-const express = require('express');
-const mongoose = require('mongoose');
-const dotenv = require('dotenv');
-const authRoutes = require('./routes/auth');
-const userRoutes = require('./routes/userRoutes');
-const studentRoutes = require('./routes/studentRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const cors = require("cors"); 
+// backend/server.js
+const express = require("express");
+const mongoose = require("mongoose");
+const dotenv = require("dotenv");
+const authRoutes = require("./routes/auth");
+const userRoutes = require("./routes/userRoutes");
+const studentRoutes = require("./routes/studentRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const cors = require("cors");
 
 dotenv.config();
 const app = express();
 const PORT = 8080;
 
-// Middleware to parse JSON
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // ADD THIS LINE
+app.use(express.urlencoded({ extended: true }));
 
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 
-// Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected successfully'))
-  .catch((err) => console.error('❌ MongoDB connection error:', err));
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log("✅ MongoDB connected successfully");
+    await createHardcodedAdmin(); //
+    app.listen(process.env.PORT || 8080, () => {
+      console.log(`🚀 Server running at http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Test route
-app.get('/', (req, res) => {
-  res.send('🚀 Server is running');
+app.get("/", (req, res) => {
+  res.send("🚀 Server is running");
 });
 
-// Routes
-app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/students', studentRoutes);
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
-});
+app.use("/api/admin", adminRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/students", studentRoutes);
