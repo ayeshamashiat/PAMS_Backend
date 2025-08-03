@@ -1,12 +1,7 @@
 const Faculty = require('../models/faculty');
 const Student = require('../models/student');
 const SupervisorAssignment = require('../models/supervisorAssignment');
-
-// Utility: Send notification (stub)
-function sendNotification(userId, message) {
-  // Implement your notification logic here (email, in-app, etc.)
-  console.log(`Notify ${userId}: ${message}`);
-}
+const { sendNotification } = require('../utils/notification');
 
 // Step 1: Get available supervisors and create a priority list
 exports.createAssignmentRequest = async (req, res) => {
