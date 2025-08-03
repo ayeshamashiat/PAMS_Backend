@@ -42,7 +42,6 @@ const forgotPassword = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: 'No user with that email' });
 
-    // ✅ Generate JWT token with short expiry
     const resetToken = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
