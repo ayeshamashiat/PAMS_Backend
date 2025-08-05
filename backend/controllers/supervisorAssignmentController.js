@@ -120,17 +120,9 @@ exports.pgcRespond = async (req, res) => {
 // Get available supervisors based on priority list
 exports.getAvailableSupervisors = async (req, res) => {
   try {
-    const { prioritySupervisorIds } = req.body; // expects an array of supervisor ObjectIds
-
-    if (!prioritySupervisorIds || !Array.isArray(prioritySupervisorIds)) {
-      return res.status(400).json({ message: 'prioritySupervisorIds must be provided as an array.' });
-    }
-
     const availableSupervisors = await Faculty.find({
-      _id: { $in: prioritySupervisorIds },
       $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] }
     });
-
     res.json({ availableSupervisors });
   } catch (err) {
     res.status(500).json({ error: err.message });
