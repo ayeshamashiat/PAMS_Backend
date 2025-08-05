@@ -8,7 +8,7 @@ exports.createAssignmentRequest = async (req, res) => {
   try {
     const { studentId, prioritySupervisorIds } = req.body;
 
-    // Optionally, validate that supervisors are available
+    //validate that supervisors are available
     const availableSupervisors = await Faculty.find({
       _id: { $in: prioritySupervisorIds },
       $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] }

@@ -9,6 +9,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const createHardcodedAdmin = require('./utils/createAdminUser');
 const cors = require("cors");
 const notificationRoutes = require('./routes/notificationRoutes');
+const facultySupervisorAssignmentRoutes = require('./routes/facultySupervisorAssignmentRoutes');
 
 dotenv.config();
 const app = express();
@@ -38,3 +39,4 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/faculty/supervisor-assignment', facultySupervisorAssignmentRoutes);
