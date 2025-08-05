@@ -8,6 +8,7 @@ const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // A
 
 // Student profile route (must be before :id route to avoid conflict)
 router.get('/profile', userController.getStudentProfile);
+router.get('/progress', userController.getStudentProgress);
 
 router.post('/', async (req, res) => {
   try {

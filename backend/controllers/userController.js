@@ -573,6 +573,35 @@ const getStudentProfile = async (req, res) => {
   }
 };
 
+exports.getStudentProgress = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    // Fetch courses and calculate credits
+    const StudentCourse = require('../models/studentCourse');
+    const courses = await StudentCourse.find({ student_id: student._id });
+    const totalCredits = courses.reduce((sum, c) => sum + c.obtained_credit, 0);
+
+    // Example: fetch supervisor assignment status
+    const SupervisorAssignment = require('../models/supervisorAssignment');
+    const assignment = await SupervisorAssignment.findOne({ student_id: student._id });
+
+    // Determine progress
+    const progress = [
+      { step: 'Enrolled', unlocked: true },
+      { step: 'Supervisor Assignment', unlocked: totalCredits >= 9 },
+      { step: 'Thesis Proposal Submission', unlocked: assignment && assignment.status === 'Assigned' && student.cgpa > 2.5 },
+      // Add more steps as needed
+    ];
+
+    res.json({ progress, totalCredits, cgpa: student.cgpa, supervisorAssignmentStatus: assignment?.status || 'Not started' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
 module.exports = {
   createStudent,
   uploadStudentsFromCSV,
