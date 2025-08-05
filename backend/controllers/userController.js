@@ -547,6 +547,32 @@ const getAllPGC = async (req, res) => {
   }
 };
 
+const getStudentProfile = async (req, res) => {
+  try {
+    // req.user._id is the User _id from JWT
+    const user = await User.findById(req.user._id);
+    if (!user || user.role !== 'Student') {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    const student = await Student.findOne({ user_id: user._id });
+    if (!student) {
+      return res.status(404).json({ message: 'Student details not found' });
+    }
+
+    res.json({
+      fullName: `${user.first_name} ${user.last_name}`,
+      studentId: student.student_number,
+      email: user.email,
+      department: user.department,
+      program: student.program_id,
+      currentAcademicYear: student.admission_year
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   createStudent,
   uploadStudentsFromCSV,
@@ -555,5 +581,6 @@ module.exports = {
   getAdminProfile,
   getAllStudents,
   getAllFaculty,
-  getAllPGC
+  getAllPGC,
+  getStudentProfile,
 };

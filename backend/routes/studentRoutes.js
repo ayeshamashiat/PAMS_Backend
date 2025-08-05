@@ -1,8 +1,13 @@
 const express = require('express');
 const Student = require('../models/student');
 const router = express.Router();
+const { protect, requireRole } = require('../middleware/authMiddleware');
+const userController = require('../controllers/userController');
 
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // Add this line
+
+// Student profile route (must be before :id route to avoid conflict)
+router.get('/profile', userController.getStudentProfile);
 
 router.post('/', async (req, res) => {
   try {
