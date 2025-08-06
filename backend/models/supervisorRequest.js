@@ -22,6 +22,7 @@ const supervisorRequestSchema = new mongoose.Schema({
       }
     }
   ],
+  current_priority_index: { type: Number, default: 0 },
   overall_status: { 
     type: String, 
     enum: ['Pending', 'Accepted', 'Rejected'], 
