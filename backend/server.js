@@ -40,3 +40,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/students", studentRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use(
+  "/api/faculty/supervisor-assignment",
+  facultySupervisorAssignmentRoutes
+);
