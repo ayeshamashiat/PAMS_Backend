@@ -20,7 +20,7 @@ router.post('/create-faculty', createFaculty);
 router.post('/create-pgc', createPGC);
 router.post('/create-student/bulk-upload', upload.single('file'), uploadStudentsFromCSV);
 
-router.get('/profile', protect, adminOnly, getAdminProfile);
+router.get('/profile', protect, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);

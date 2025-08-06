@@ -1,7 +1,7 @@
 const express = require('express');
 const Student = require('../models/student');
 const router = express.Router();
-const {getStudentProfile, getStudentProgress} = require('../controllers/userController');
+const {getStudentProfile, getStudentProgress, getStudentCourses} = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 
 
@@ -10,6 +10,7 @@ const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // A
 //must be before :id
 router.get('/profile', protect, getStudentProfile);
 router.get('/progress', getStudentProgress);
+router.get('/courses', protect, getStudentCourses);
 
 router.post('/', async (req, res) => {
   try {
