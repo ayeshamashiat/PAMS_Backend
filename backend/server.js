@@ -9,7 +9,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const cors = require("cors");
 const notificationRoutes = require("./routes/notificationRoutes");
 const facultySupervisorAssignmentRoutes = require("./routes/facultySupervisorAssignmentRoutes");
-
+const createHardcodedAdmin = require("./utils/createAdminUser");
 dotenv.config();
 const app = express();
 const PORT = 8080;
