@@ -1,13 +1,15 @@
 const express = require('express');
 const Student = require('../models/student');
 const router = express.Router();
-const { protect, requireRole } = require('../middleware/authMiddleware');
-const userController = require('../controllers/userController');
+const {getStudentProfile, getStudentProgress} = require('../controllers/userController');
+const { protect } = require('../middleware/authMiddleware');
+
 
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // Add this line
 
-// Student profile route (must be before :id route to avoid conflict)
-router.get('/profile', userController.getStudentProfile);
+//must be before :id
+router.get('/profile', protect, getStudentProfile);
+router.get('/progress', getStudentProgress);
 
 router.post('/', async (req, res) => {
   try {
@@ -32,6 +34,6 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.use('/supervisor-assignment', supervisorAssignmentRoutes); // Add this line
+router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 
 module.exports = router;
