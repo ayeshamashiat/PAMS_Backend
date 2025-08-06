@@ -613,6 +613,33 @@ const getStudentProgress = async (req, res) => {
   }
 };
 
+const setMaxSupervisionCap = async (req, res) => {
+  try {
+    const { facultyId } = req.params;
+    const { max_supervision_capacity } = req.body;
+
+    if (typeof max_supervision_capacity !== 'number' || max_supervision_capacity < 0) {
+      return res.status(400).json({ message: 'max_supervision_capacity must be a non-negative number' });
+    }
+
+    const faculty = await Faculty.findByIdAndUpdate(
+      facultyId,
+      { max_supervision_capacity },
+      { new: true }
+    );
+
+    if (!faculty) {
+      return res.status(404).json({ message: 'Faculty not found' });
+    }
+
+    res.json({
+      message: 'Max supervision capacity updated successfully',
+      faculty
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 module.exports = {
   createStudent,
@@ -624,5 +651,6 @@ module.exports = {
   getAllFaculty,
   getAllPGC,
   getStudentProfile,
-  getStudentProgress
+  getStudentProgress,
+  setMaxSupervisionCap
 };
