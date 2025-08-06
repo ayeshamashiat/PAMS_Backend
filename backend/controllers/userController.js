@@ -573,29 +573,41 @@ const getStudentProfile = async (req, res) => {
   }
 };
 
-exports.getStudentProgress = async (req, res) => {
+const getStudentProgress = async (req, res) => {
   try {
     const student = await Student.findOne({ user_id: req.user._id });
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    // Fetch courses and calculate credits
+    // Get credits
     const StudentCourse = require('../models/studentCourse');
     const courses = await StudentCourse.find({ student_id: student._id });
-    const totalCredits = courses.reduce((sum, c) => sum + c.obtained_credit, 0);
+    const totalCredits = courses.reduce((sum, c) => sum + (c.obtained_credit || 0), 0);
 
-    // Example: fetch supervisor assignment status
+    // Get supervisor assignment status
     const SupervisorAssignment = require('../models/supervisorAssignment');
     const assignment = await SupervisorAssignment.findOne({ student_id: student._id });
 
-    // Determine progress
+    // Unlock logic
+    const creditsOk = totalCredits >= 9;
+    const cgpaOk = student.cgpa > 2.5;
+    const supervisorAssigned = assignment && assignment.status === 'Assigned';
+
+    // Determine progress steps
     const progress = [
       { step: 'Enrolled', unlocked: true },
-      { step: 'Supervisor Assignment', unlocked: totalCredits >= 9 },
-      { step: 'Thesis Proposal Submission', unlocked: assignment && assignment.status === 'Assigned' && student.cgpa > 2.5 },
-      // Add more steps as needed
+      { step: 'Supervisor Assignment', unlocked: creditsOk },
+      { step: 'Thesis Proposal Submission', unlocked: creditsOk && cgpaOk && supervisorAssigned },
+      { step: 'Thesis Submission', unlocked: creditsOk && cgpaOk && supervisorAssigned }, // add more conditions if needed
+      { step: 'Predefense', unlocked: creditsOk && cgpaOk && supervisorAssigned },       // add more conditions if needed
+      { step: 'Defense', unlocked: creditsOk && cgpaOk && supervisorAssigned }           // add more conditions if needed
     ];
 
-    res.json({ progress, totalCredits, cgpa: student.cgpa, supervisorAssignmentStatus: assignment?.status || 'Not started' });
+    res.json({
+      progress,
+      totalCredits,
+      cgpa: student.cgpa,
+      supervisorAssignmentStatus: assignment?.status || 'Not started'
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -612,4 +624,5 @@ module.exports = {
   getAllFaculty,
   getAllPGC,
   getStudentProfile,
+  getStudentProgress
 };
