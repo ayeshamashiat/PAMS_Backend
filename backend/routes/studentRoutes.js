@@ -1,6 +1,15 @@
 const express = require('express');
 const Student = require('../models/student');
 const router = express.Router();
+const {getStudentProfile, getStudentProgress} = require('../controllers/userController');
+const { protect } = require('../middleware/authMiddleware');
+
+
+const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // Add this line
+
+//must be before :id
+router.get('/profile', protect, getStudentProfile);
+router.get('/progress', getStudentProgress);
 
 router.post('/', async (req, res) => {
   try {
@@ -24,5 +33,7 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 
 module.exports = router;

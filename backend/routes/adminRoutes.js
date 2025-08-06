@@ -9,7 +9,8 @@ const {
   getAllStudents,
   getAllFaculty,
   getAllPGC,
-  getAdminProfile
+  getAdminProfile,
+  setMaxSupervisionCap
 } = require('../controllers/userController');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
 
@@ -23,5 +24,6 @@ router.get('/profile', protect, adminOnly, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
+router.patch('/faculty/:facultyId/max-supervision-cap', protect, adminOnly, setMaxSupervisionCap);
 
 module.exports = router;

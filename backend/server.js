@@ -7,6 +7,8 @@ const userRoutes = require("./routes/userRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const cors = require("cors");
+const notificationRoutes = require("./routes/notificationRoutes");
+const facultySupervisorAssignmentRoutes = require("./routes/facultySupervisorAssignmentRoutes");
 
 dotenv.config();
 const app = express();
@@ -22,6 +24,8 @@ mongoose
   .then(async () => {
     console.log("✅ MongoDB connected successfully");
     await createHardcodedAdmin(); //
+    console.log("✅ MongoDB connected successfully");
+    await createHardcodedAdmin();
     app.listen(process.env.PORT || 8080, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
     });
