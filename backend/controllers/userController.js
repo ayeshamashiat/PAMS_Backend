@@ -104,24 +104,24 @@ const uploadStudentsFromCSV = async (req, res) => {
     .on('end', async () => {
       for (const row of results) {
         const {
-          user_id,
+          student_number,
           email,
           first_name,
           last_name,
-          program,
+          program_id,
           department,
-          academic_year
+          admission_year
         } = row;
 
-        if (!user_id || !email || !first_name || !last_name || !program || !department || !academic_year) {
-          failed.push({ user_id, reason: 'Missing required fields' });
+        if (!student_number || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
+          failed.push({ student_number, reason: 'Missing required fields' });
           continue;
         }
 
         try {
-          const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+          const existingUser = await User.findOne({ $or: [{ email }] });
           if (existingUser) {
-            failed.push({ user_id, reason: 'User already exists' });
+            failed.push({ student_number, reason: 'User already exists' });
             continue;
           }
 
@@ -129,7 +129,6 @@ const uploadStudentsFromCSV = async (req, res) => {
           const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
           const newUser = new User({
-            user_id,
             email,
             password_hash: hashedPassword,
             first_name,
@@ -142,9 +141,9 @@ const uploadStudentsFromCSV = async (req, res) => {
 
           const student = new Student({
             user_id: savedUser._id,
-            student_number: user_id,
-            program_id: program,
-            admission_year: academic_year,
+            student_number,
+            program_id,
+            admission_year,
             current_semester: 1
           });
 
@@ -168,7 +167,7 @@ Admin Team`
           });
 
         } catch (err) {
-          failed.push({ user_id, reason: err.message });
+          failed.push({ student_number, reason: err.message });
         }
       }
 
@@ -180,6 +179,7 @@ Admin Team`
       });
     });
 };
+
 
 
 
