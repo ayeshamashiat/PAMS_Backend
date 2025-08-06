@@ -4,7 +4,7 @@ const SupervisorAssignment = require('../models/supervisorAssignment');
 const { sendNotification } = require('../utils/notification');
 
 // Step 1: Get available supervisors and create a priority list
-exports.createAssignmentRequest = async (req, res) => {
+const createAssignmentRequest = async (req, res) => {
   try {
     const { studentId, prioritySupervisorIds } = req.body;
 
@@ -35,7 +35,7 @@ exports.createAssignmentRequest = async (req, res) => {
 };
 
 // Step 2: Supervisor responds (accept/reject)
-exports.supervisorRespond = async (req, res) => {
+const supervisorRespond = async (req, res) => {
   try {
     const { assignmentId, response } = req.body; // response: 'Accepted' or 'Rejected'
     const assignment = await SupervisorAssignment.findById(assignmentId);
@@ -73,7 +73,7 @@ exports.supervisorRespond = async (req, res) => {
 };
 
 // Step 3: PGC responds (approve/reject)
-exports.pgcRespond = async (req, res) => {
+const pgcRespond = async (req, res) => {
   try {
     const { assignmentId, response } = req.body; // response: 'Approved' or 'Rejected'
     const assignment = await SupervisorAssignment.findById(assignmentId);
@@ -118,7 +118,7 @@ exports.pgcRespond = async (req, res) => {
 };
 
 // Get available supervisors based on priority list
-exports.getAvailableSupervisors = async (req, res) => {
+const getAvailableSupervisors = async (req, res) => {
   try {
     const availableSupervisors = await Faculty.find({
       $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] }
@@ -127,4 +127,10 @@ exports.getAvailableSupervisors = async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+module.exports = {
+  createAssignmentRequest,
+  getAvailableSupervisors,
+  supervisorRespond
 };

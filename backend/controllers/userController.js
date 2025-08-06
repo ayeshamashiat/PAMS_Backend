@@ -7,6 +7,7 @@ const Faculty = require('../models/faculty');
 const crypto = require('crypto'); 
 const fs = require('fs');
 const csv = require('csv-parser');
+const StudentCourse = require('../models/studentCourse');
 
 const generatePassword = () => {
   return crypto.randomBytes(6).toString('base64');
@@ -15,29 +16,29 @@ const generatePassword = () => {
 const createStudent = async (req, res) => {
   try {
     const {
-      user_id,
+      student_number,
       email,
       first_name,
       last_name,
-      program, 
+      program_id, 
       department,
-      academic_year
+      admission_year
     } = req.body;
 
-    if (!user_id || !email || !first_name || !last_name || !program || !department || !academic_year) {
+    if (!student_number  || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
-    if (existingUser) {
-      return res.status(409).json({ message: 'User already exists' });
-    }
+    // const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    // if (existingUser) {
+    //   return res.status(409).json({ message: 'User already exists' });
+    // }
 
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
     const newUser = new User({
-      user_id,
+
       email,
       password_hash: hashedPassword,
       first_name,
@@ -50,9 +51,9 @@ const createStudent = async (req, res) => {
 
     const student = new Student({
       user_id: savedUser._id,
-      student_number: user_id,
-      program_id: program,
-      admission_year: academic_year,
+      student_number: student_number,
+      program_id: program_id,
+      admission_year: admission_year,
       current_semester: 1
     });
 
@@ -87,6 +88,7 @@ Admin Team`
     res.status(500).json({ message: 'Internal server error' });
   }
 };
+
 
 const uploadStudentsFromCSV = async (req, res) => {
   if (!req.file) {
@@ -579,7 +581,6 @@ const getStudentProgress = async (req, res) => {
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
     // Get credits
-    const StudentCourse = require('../models/studentCourse');
     const courses = await StudentCourse.find({ student_id: student._id });
     const totalCredits = courses.reduce((sum, c) => sum + (c.obtained_credit || 0), 0);
 
@@ -641,6 +642,20 @@ const setMaxSupervisionCap = async (req, res) => {
   }
 };
 
+const getStudentCourses = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    const courses = await StudentCourse.find({ student_id: student._id });
+    const totalCredits = courses.reduce((sum, c) => sum + (c.obtained_credit || 0), 0);
+
+    res.json({ courses, totalCredits });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createStudent,
   uploadStudentsFromCSV,
@@ -652,5 +667,6 @@ module.exports = {
   getAllPGC,
   getStudentProfile,
   getStudentProgress,
-  setMaxSupervisionCap
+  setMaxSupervisionCap,
+  getStudentCourses
 };

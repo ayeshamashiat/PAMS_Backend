@@ -5,8 +5,8 @@ const studentCourseSchema = new mongoose.Schema({
   course_id:     { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
   obtained_credit: { type: Number, required: true },
   grade:         { type: String }, // e.g., 'A', 'B+', etc.
-  semester:      { type: String }, // optional, for redundancy
-  academic_year: { type: String }  // optional, for redundancy
+  semester:      { type: String }, 
+  academic_year: { type: String }  
 });
 
 module.exports = mongoose.model('StudentCourse', studentCourseSchema);
