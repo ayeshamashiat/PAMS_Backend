@@ -65,6 +65,7 @@ const createStudent = async (req, res) => {
       message: `Dear ${first_name},
 
 Your student account has been created.
+Student Number: ${student_number}
 
 Login credentials:
 Email: ${email}
