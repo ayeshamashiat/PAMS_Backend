@@ -1,10 +1,8 @@
 const express = require('express');
 const Student = require('../models/student');
 const router = express.Router();
-const {getStudentProfile, getStudentProgress, getStudentCourses} = require('../controllers/userController');
+const {getStudentProfile, getStudentProgress, getStudentCourses} = require('../controllers/studentController');
 const { protect } = require('../middleware/authMiddleware');
-
-
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // Add this line
 
 //must be before :id

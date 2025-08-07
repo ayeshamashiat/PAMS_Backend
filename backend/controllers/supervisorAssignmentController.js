@@ -6,31 +6,37 @@ const { sendNotification } = require('../utils/notification');
 // Step 1: Get available supervisors and create a priority list
 const createAssignmentRequest = async (req, res) => {
   try {
-    const { studentId, prioritySupervisorIds } = req.body;
+    const { priorityFacultyIds } = req.body; // Array of 3 faculty ObjectIds
+    const studentId = req.user.student_id; // Or however you get student id
 
-    //validate that supervisors are available
-    const availableSupervisors = await Faculty.find({
-      _id: { $in: prioritySupervisorIds },
-      $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] }
-    });
-
-    if (availableSupervisors.length === 0) {
-      return res.status(400).json({ message: 'No available supervisors in the provided list.' });
+    if (!priorityFacultyIds || priorityFacultyIds.length !== 3) {
+      return res.status(400).json({ message: 'Provide exactly 3 faculty IDs.' });
     }
 
-    // Create assignment request
-    const assignment = await SupervisorAssignment.create({
+    // Check if already exists
+    const existing = await SupervisorAssignment.findOne({ student_id: studentId });
+    if (existing) return res.status(409).json({ message: 'Assignment already exists.' });
+
+    const priority_list = priorityFacultyIds.map(fid => ({
+      faculty_id: fid,
+      status: 'NotAssigned'
+    }));
+
+    const assignment = new SupervisorAssignment({
       student_id: studentId,
-      supervisor_priority_list: availableSupervisors.map(s => s._id),
-      current_priority_index: 0
+      priority_list,
+      current_priority_index: 0,
+      overall_status: 'Pending'
     });
 
-    // Send request to top-priority supervisor
-    sendNotification(availableSupervisors[0].user_id, 'You have a new supervision request.');
+    // Send request to first supervisor
+    assignment.priority_list[0].status = 'Requested';
+    await assignment.save();
+    sendNotification(priorityFacultyIds[0], 'You have a new supervision request.');
 
-    res.status(201).json({ message: 'Assignment request created.', assignment });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(201).json({ message: 'Supervisor assignment request created.', assignment });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -132,5 +138,6 @@ const getAvailableSupervisors = async (req, res) => {
 module.exports = {
   createAssignmentRequest,
   getAvailableSupervisors,
-  supervisorRespond
+  supervisorRespond,
+  pgcRespond
 };
