@@ -11,6 +11,7 @@ const cors = require("cors");
 const notificationRoutes = require('./routes/notificationRoutes');
 const facultyRoutes = require('./routes/facultyRoutes');
 
+
 dotenv.config();
 const app = express();
 const PORT = 8080;

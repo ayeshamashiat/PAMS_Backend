@@ -6,12 +6,17 @@ const { sendNotification } = require('../utils/notification');
 // Step 1: Get available supervisors and create a priority list
 const createAssignmentRequest = async (req, res) => {
   try {
-    const { priorityFacultyIds } = req.body; // Array of 3 faculty ObjectIds
-    const studentId = req.user.student_id; // Or however you get student id
-
-    if (!priorityFacultyIds || priorityFacultyIds.length !== 3) {
-      return res.status(400).json({ message: 'Provide exactly 3 faculty IDs.' });
+    const { priorityFacultyIds } = req.body;
+    console.log(req.body) // Array of 3 faculty ObjectIds
+    const student = await Faculty.findOne({ user_id: req.body.priorityFacultyId[0] });
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
     }
+    const studentId = student._id; 
+
+    //if (!priorityFacultyIds || priorityFacultyIds.length !== 3) {
+    //  return res.status(400).json({ message: 'Provide exactly 3 faculty IDs.' });
+    //}
 
     // Check if already exists
     const existing = await SupervisorAssignment.findOne({ student_id: studentId });
