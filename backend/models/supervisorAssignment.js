@@ -1,16 +1,17 @@
 const mongoose = require('mongoose');
 
 const supervisorAssignmentSchema = new mongoose.Schema({
-  student_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
-  supervisor_priority_list: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Faculty' }],
+  student_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true, unique: true },
+  priority_list: [
+    {
+      faculty_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', required: true },
+      status: { type: String, enum: ['NotAssigned', 'Requested', 'Rejected', 'Accepted', 'PGCRejected', 'PGCAccepted'], default: 'NotAssigned' }
+    }
+  ],
   current_priority_index: { type: Number, default: 0 },
-  status: {
-    type: String,
-    enum: ['Pending', 'SupervisorAccepted', 'SupervisorRejected', 'PGCApproved', 'PGCRejected', 'Assigned', 'Failed'],
-    default: 'Pending'
-  },
-  supervisor_response: { type: String, enum: ['Accepted', 'Rejected', 'Pending'], default: 'Pending' },
-  pgc_response: { type: String, enum: ['Approved', 'Rejected', 'Pending'], default: 'Pending' }
-}, { timestamps: true });
+  overall_status: { type: String, enum: ['Pending', 'Assigned', 'Failed'], default: 'Pending' },
+  accepted_faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', default: null },
+  createdAt: { type: Date, default: Date.now }
+});
 
 module.exports = mongoose.model('SupervisorAssignment', supervisorAssignmentSchema);
