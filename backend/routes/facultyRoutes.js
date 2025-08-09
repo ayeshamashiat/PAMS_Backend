@@ -8,12 +8,13 @@ const {
     getProposalsFromSupervisedStudents,
     reviewThesisProposal
 } = require('../controllers/facultyController');
+const { protect } = require('../middleware/authMiddleware');
 
 // View supervised students (with thesis info)
 router.get('/supervised-students', getSupervisedStudents);
 
 // View pending supervisor requests (priority list)
-router.get('/supervisor-requests', getPendingSupervisorRequests);
+router.get('/supervisor-requests', protect, getPendingSupervisorRequests);
 
 // Accept/reject supervisor requests
 router.post('/supervisor-respond', supervisorRespond);

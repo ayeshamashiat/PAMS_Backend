@@ -198,7 +198,7 @@ const createFaculty = async (req, res) => {
       return res.status(400).json({ message: 'Required fields are missing' });
     }
 
-    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    const existingUser = await User.findOne({ $or: [{ email }, { faculty_number }] });
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
@@ -238,6 +238,7 @@ const createFaculty = async (req, res) => {
 
 Your faculty account has been created.
 
+Your Faculty Number: ${faculty_number}
 Login credentials:
 Email: ${email}
 Password: ${rawPassword}
@@ -295,7 +296,7 @@ const createBulkFacultyFromCSV = async (req, res) => {
       }
 
       try {
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ email }, {faculty_number});
         if (existingUser) {
           result.message = 'User already exists';
           results.push(result);
