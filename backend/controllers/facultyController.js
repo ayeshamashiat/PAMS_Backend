@@ -4,7 +4,6 @@ const SupervisorAssignment = require('../models/supervisorAssignment');
 const Faculty = require('../models/faculty');
 const { sendNotification } = require('../utils/notification');
 
-// View supervised students (with thesis info)
 const getSupervisedStudents = async (req, res) => {
   try {
     const faculty = await Faculty.findOne({ user_id: req.user._id });
@@ -24,29 +23,30 @@ const getSupervisedStudents = async (req, res) => {
   }
 };
 
-// View pending supervisor requests (priority list)
 const getPendingSupervisorRequests = async (req, res) => {
   try {
     const faculty = await Faculty.findOne({ user_id: req.user._id });
-    if (!faculty) return res.status(404).json({ message: 'Faculty not found' });
+    if (!faculty) {
+      return res.status(404).json({ message: 'Faculty not found' });
+    }
 
     const assignments = await SupervisorAssignment.find({
-      supervisor_priority_list: faculty._id,
-      current_priority_index: { $gte: 0 },
-      status: 'Pending'
+      [`priority_list.${0}.faculty_id`]: faculty._id, 
+      [`priority_list.${0}.status`]: 'Requested'
     })
-    .populate('student_id')
-    .lean();
+      .populate('student_id')
+      .lean();
 
     const filtered = assignments.filter(a =>
-      a.supervisor_priority_list[a.current_priority_index].toString() === faculty._id.toString()
+      a.priority_list[a.current_priority_index].faculty_id.toString() === faculty._id.toString()
     );
 
-    res.json({ requests: filtered });
+    return res.json({ requests: filtered });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 };
+
 
 // View supervision quota/load
 const getSupervisionQuota = async (req, res) => {
