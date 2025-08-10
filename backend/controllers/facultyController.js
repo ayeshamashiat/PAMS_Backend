@@ -4,7 +4,6 @@ const SupervisorAssignment = require('../models/supervisorAssignment');
 const Faculty = require('../models/faculty');
 const { sendNotification } = require('../utils/notification');
 
-// View supervised students (with thesis info)
 const getSupervisedStudents = async (req, res) => {
   try {
     const faculty = await Faculty.findOne({ user_id: req.user._id });
