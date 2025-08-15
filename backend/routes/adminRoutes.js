@@ -26,6 +26,6 @@ router.get('/profile', protect, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
-router.patch('/faculty/:facultyId/max-supervision-cap', protect, adminOnly, setMaxSupervisionCap);
+router.patch('/faculty/:facultyId/max-supervision-cap', protect, setMaxSupervisionCap);
 
 module.exports = router;

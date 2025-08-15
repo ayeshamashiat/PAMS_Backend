@@ -180,7 +180,6 @@ Admin Team`
     });
 };
 
-// Admin creates a faculty user manually (with generated password)
 const createFaculty = async (req, res) => {
   try {
     const {
@@ -457,7 +456,6 @@ const getAdminProfile = async (req, res) => {
     return res.status(500).json({ message: 'Server error' });
   }
 };
-
 
 
 const getAllStudents = async (req, res) => {

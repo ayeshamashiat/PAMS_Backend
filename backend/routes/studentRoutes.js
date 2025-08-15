@@ -10,15 +10,15 @@ router.get('/profile', protect, getStudentProfile);
 router.get('/progress', getStudentProgress);
 router.get('/courses', protect, getStudentCourses);
 
-router.post('/', async (req, res) => {
-  try {
-    const student = new Student(req.body);
-    await student.save();
-    res.json({ message: 'Student created', student });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// router.post('/', async (req, res) => {
+//   try {
+//     const student = new Student(req.body);
+//     await student.save();
+//     res.json({ message: 'Student created', student });
+//   } catch (error) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
 
 router.get('/:id', async (req, res) => {
   try {
@@ -32,6 +32,8 @@ router.get('/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+//do a getStduentByID
 
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 
