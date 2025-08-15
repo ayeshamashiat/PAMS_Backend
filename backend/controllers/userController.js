@@ -692,73 +692,46 @@ const pushCoursesFromCSV = async (req, res) => {
           course_name,
           credit,
           semester,
-          academic_year,
-          program_id,
+          academic_year
         } = row;
 
-        if (!course_code || !course_name || !credit || !semester || !academic_year || !program_id) {
-          failed.push({ course_code, reason: 'Missing required fields' });
+        // Check required fields
+        if (!course_code || !course_name || !credit || !semester || !academic_year) {
+          failed.push({ course_code: course_code || 'N/A', reason: 'Missing required fields' });
           continue;
         }
 
         try {
-          const existingCourse = await Course.findOne({ $or: [{ email }] });
+          // Check if course already exists
+          const existingCourse = await Course.findOne({ course_code });
           if (existingCourse) {
-            failed.push({ course_code, reason: 'User already exists' });
+            failed.push({ course_code, reason: 'Course already exists' });
             continue;
           }
 
+          // Save new course
           const newCourse = new Course({
             course_code,
             course_name,
-            credit,
+            credit: Number(credit), // ensure it's a number
             semester,
-            academic_year,
-            program_id
+            academic_year
           });
 
-          const savedCourse = await newCourse.save();
-
-          const student = new Student({
-            user_id: savedUser._id,
-            student_number,
-            program_id,
-            admission_year,
-            current_semester: 1
-          });
-
-          await student.save();
-
-          await sendEmail({
-            email,
-            subject: 'Your Student Account Credentials',
-            message: `Dear ${first_name},
-
-Your student account has been created.
-
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-          });
-
+          await newCourse.save();
         } catch (err) {
-          failed.push({ student_number, reason: err.message });
+          failed.push({ course_code, reason: err.message });
         }
       }
 
       return res.status(201).json({
-        message: 'Bulk student upload completed',
+        message: 'Bulk course upload completed',
         total: results.length,
         failed: failed.length,
         errors: failed
       });
     });
-}
+};
 
 module.exports = {
   createStudent,
@@ -770,5 +743,6 @@ module.exports = {
   getAllFaculty,
   getAllPGC,
   setMaxSupervisionCap,
-  createBulkFacultyFromCSV
+  createBulkFacultyFromCSV,
+  pushCoursesFromCSV
 };

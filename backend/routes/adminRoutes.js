@@ -11,9 +11,10 @@ const {
   getAllPGC,
   getAdminProfile,
   setMaxSupervisionCap,
-  createBulkFacultyFromCSV
+  createBulkFacultyFromCSV,
+  pushCoursesFromCSV
 } = require('../controllers/userController');
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
 
 router.post('/create-student/manual-student-creation', createStudent);
@@ -21,6 +22,7 @@ router.post('/create-faculty', createFaculty);
 router.post('/create-pgc', createPGC);
 router.post('/create-student/bulk-upload', upload.single('file'), uploadStudentsFromCSV);
 router.post('/create-faculty/bulk-upload', upload.single('file'), createBulkFacultyFromCSV);
+router.post('/upload-courses', upload.single('file'), pushCoursesFromCSV);
 
 router.get('/profile', protect, getAdminProfile);
 router.get('/students', getAllStudents);
