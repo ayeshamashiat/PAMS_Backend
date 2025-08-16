@@ -793,28 +793,46 @@ const assignCourseManually = async (req, res) => {
   try {
     const { student_id, course_id } = req.body;
 
-    const student = await Student.findById(student_id);
+    const student = await Student.findById(student_id).populate("user_id");
     const course = await Course.findById(course_id);
 
     if (!student || !course) {
       return res.status(404).json({ message: "Student or course not found" });
     }
 
-    const assignment = await StudentCourse.create({
-      student_id,
-      course_id,
-      semester: getSemesterFromCourseCode(course.course_code),
-      academic_year: student.academic_year
-    });
-
-    res.status(201).json(assignment);
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ message: "Course already assigned to this student" });
+    if (student.user_id && course.department && student.user_id.department !== course.department) {
+      console.warn(`⚠️ Student ${student._id} department mismatch with course ${course._id}`);
     }
-    res.status(500).json({ message: err.message });
+
+    const semester = getSemesterFromCourseCode(course.course_code);
+    const academic_year = String(student.admission_year); 
+
+    try {
+      const assignment = await StudentCourse.create({
+        student_id: student._id,
+        course_id: course._id,
+        semester: String(semester),
+        academic_year
+      });
+      console.log(`✅ Assigned course ${course._id} to student ${student._id}`);
+      return res.status(201).json(assignment);
+
+    } catch (err) {
+      if (err.code === 11000) {
+        console.log(`⚠️ Duplicate assignment: ${student._id} already has ${course._id}`);
+        return res.status(400).json({ message: "Course already assigned to this student" });
+      } else {
+        console.error("❌ Insert error:", err);
+        return res.status(500).json({ message: err.message });
+      }
+    }
+
+  } catch (err) {
+    console.error("❌ Manual assign error:", err);
+    return res.status(500).json({ message: err.message });
   }
 };
+
 
 
 module.exports = {
