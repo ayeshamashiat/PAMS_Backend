@@ -5,6 +5,7 @@ const User = require('../models/user');
 const Student = require('../models/student');
 const Faculty = require('../models/faculty');
 const Course = require('../models/course');
+const StudentCourse = require('../models/studentCourse'); 
 const crypto = require('crypto'); 
 const fs = require('fs');
 const csv = require('csv-parser');
@@ -690,13 +691,14 @@ const pushCoursesFromCSV = async (req, res) => {
         const {
           course_code,
           course_name,
+          department,
           credit,
           semester,
           academic_year
         } = row;
 
         // Check required fields
-        if (!course_code || !course_name || !credit || !semester || !academic_year) {
+        if (!course_code || !course_name || !department || !credit || !semester || !academic_year) {
           failed.push({ course_code: course_code || 'N/A', reason: 'Missing required fields' });
           continue;
         }
@@ -713,7 +715,8 @@ const pushCoursesFromCSV = async (req, res) => {
           const newCourse = new Course({
             course_code,
             course_name,
-            credit: Number(credit), // ensure it's a number
+            department,
+            credit: Number(credit), 
             semester,
             academic_year
           });
@@ -733,6 +736,87 @@ const pushCoursesFromCSV = async (req, res) => {
     });
 };
 
+function getSemesterFromCourseCode(code) {
+  const parts = code.split(" ");
+  if (parts.length < 2) return null;
+  const digits = parts[1];
+  return parseInt(digits[1]); 
+}
+
+const autoAssignCourses = async (req, res) => {
+  try {
+    const courses = await Course.find();
+    let created = 0, skipped = 0;
+
+    for (const course of courses) {
+      const semester = getSemesterFromCourseCode(course.course_code);
+      console.log(`📘 Course: ${course.course_code}, Dept: ${course.department}, Semester: ${semester}`);
+
+      const students = await Student.find({ current_semester: semester }).populate("user_id");
+      console.log(`  Found ${students.length} students in semester ${semester}`);
+
+      const matchedStudents = students.filter(
+        (s) => s.user_id && s.user_id.department === course.department
+      );
+      console.log(`  Matched ${matchedStudents.length} students in dept ${course.department}`);
+
+      for (const student of matchedStudents) {
+        try {
+          await StudentCourse.create({
+            student_id: student._id,
+            course_id: course._id,
+            semester,
+            academic_year: student.admission_year
+          });
+          created++;
+        } catch (err) {
+            if (err.code === 11000) {
+              skipped++;
+              console.log(`⚠️ Duplicate: ${student._id} already has ${course._id}`);
+            } else {
+              console.error("❌ Insert error:", err);
+            }
+          }
+
+      }
+    }
+
+    return res.status(200).json({ message: "Auto assignment completed", created, skipped });
+  } catch (err) {
+    console.error("❌ Auto-assign error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+
+const assignCourseManually = async (req, res) => {
+  try {
+    const { student_id, course_id } = req.body;
+
+    const student = await Student.findById(student_id);
+    const course = await Course.findById(course_id);
+
+    if (!student || !course) {
+      return res.status(404).json({ message: "Student or course not found" });
+    }
+
+    const assignment = await StudentCourse.create({
+      student_id,
+      course_id,
+      semester: getSemesterFromCourseCode(course.course_code),
+      academic_year: student.academic_year
+    });
+
+    res.status(201).json(assignment);
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ message: "Course already assigned to this student" });
+    }
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
 module.exports = {
   createStudent,
   uploadStudentsFromCSV,
@@ -744,5 +828,7 @@ module.exports = {
   getAllPGC,
   setMaxSupervisionCap,
   createBulkFacultyFromCSV,
-  pushCoursesFromCSV
+  pushCoursesFromCSV,
+  autoAssignCourses,
+  assignCourseManually
 };
