@@ -47,8 +47,6 @@ const getPendingSupervisorRequests = async (req, res) => {
   }
 };
 
-
-// View supervision quota/load
 const getSupervisionQuota = async (req, res) => {
   try {
     const faculty = await Faculty.findOne({ user_id: req.user._id });
@@ -64,7 +62,6 @@ const getSupervisionQuota = async (req, res) => {
   }
 };
 
-// View thesis proposals from supervised students
 const getProposalsFromSupervisedStudents = async (req, res) => {
   try {
     const faculty = await Faculty.findOne({ user_id: req.user._id });
@@ -80,7 +77,6 @@ const getProposalsFromSupervisedStudents = async (req, res) => {
   }
 };
 
-// Review thesis proposal (give feedback, approve, request revision)
 const reviewThesisProposal = async (req, res) => {
   try {
     const { proposalId, feedback, status } = req.body; // status: 'Approved', 'RevisionRequested', 'Rejected'
@@ -100,7 +96,6 @@ const reviewThesisProposal = async (req, res) => {
   }
 };
 
-// Supervisor respond to request
 const supervisorRespond = async (req, res) => {
   try {
     const { assignmentId, response } = req.body; // response: 'Accepted' or 'Rejected'
@@ -113,7 +108,7 @@ const supervisorRespond = async (req, res) => {
     }
 
     if (response === 'Accepted') {
-      assignment.priority_list[idx].status = 'Accepted';
+      assignment.priority_list[idx].status = 'Supervisor Accepted';
       assignment.accepted_faculty = assignment.priority_list[idx].faculty_id;
       // Notify PGC for approval
       sendNotification('PGC_USER_ID', 'Supervisor accepted. Awaiting your approval.');
