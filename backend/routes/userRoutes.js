@@ -1,5 +1,6 @@
 const express = require('express');
 const { protect, authorizeSelf } = require('../middleware/authMiddleware');
+const { updateProfile} = require('../controllers/userController');
 
 const router = express.Router();
 
@@ -11,4 +12,6 @@ router.get('/profile/:id', protect, authorizeSelf, (req, res) => {
   res.json({ message: `This is your profile.` });
 });
 
-module.exports = router; 
+router.put('/edit-profile', updateProfile);
+
+module.exports = router;
