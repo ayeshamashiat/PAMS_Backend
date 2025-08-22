@@ -2,7 +2,7 @@ const StudentCourseList = require('../models/StudentCourseList');
 const Student = require('../models/student');
 const ThesisProgress = require('../models/thesisProgress');
 
-exports.checkProgressEligibility = async (req, res) => {
+const checkProgressEligibility = async (req, res) => {
   try {
     const students = await Student.find();
 
@@ -15,11 +15,17 @@ exports.checkProgressEligibility = async (req, res) => {
 
       let unlocked = progress?.unlocked_stages || [];
 
+      // Unlock Supervisor Assignment
       if (credits >= 9 && cgpa > 2.5 && !unlocked.includes('Supervisor Assignment')) {
         unlocked.push('Supervisor Assignment');
       }
 
-      // Further logic here — assume supervisor assigned etc. using flags or a field
+      if (credits >= 9 && cgpa > 2.5 && !unlocked.includes('Proposal')) {
+        unlocked.push('Proposal');
+      }
+      if (credits >= 9 && cgpa > 2.5 && !unlocked.includes('Thesis')) {
+        unlocked.push('Thesis');
+      }
 
       if (!progress) {
         await ThesisProgress.create({
@@ -39,3 +45,7 @@ exports.checkProgressEligibility = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+module.exports = {
+  checkProgressEligibility
+}
