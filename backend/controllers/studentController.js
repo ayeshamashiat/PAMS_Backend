@@ -3,7 +3,7 @@ const Student = require('../models/student');
 const StudentCourse = require('../models/studentCourse');
 const SupervisorAssignment = require('../models/supervisorAssignment');
 const Course = require('../models/course');
-
+const ThesisProposal = require('../models/thesisProposal');
 
 const getStudentProfile = async (req, res) => {
   try {
@@ -71,65 +71,129 @@ const getStudentProgress = async (req, res) => {
 
 const getStudentCourses = async (req, res) => {
   try {
+    // Step 1: Find student linked to logged-in user
     const student = await Student.findOne({ user_id: req.user._id })
-      .populate('program_id') // only if program info is stored like this
+      .populate('program_id')
       .exec();
 
-    if (!student) return res.status(404).json({ error: 'Student not found' });
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
 
-    const programId = student.program_id || student.department; // use the correct field here
-    if (!programId) return res.status(400).json({ error: 'Program/Department not assigned to student' });
+    // Step 2: Find all StudentCourse docs for this student
+    const enrolledCourses = await StudentCourse.find({ student_id: student._id })
+      .populate('course_id') // pull full course details
+      .exec();
 
-    // Step 1: Get all courses for this student's program
-    const assignedCourses = await Course.find({ program_id: programId, status: 'Active' });
+    if (!enrolledCourses.length) {
+      return res.status(404).json({ message: 'No courses found for this student' });
+    }
 
-    // Step 2: Get courses student has already taken
-    const takenCourses = await StudentCourse.find({ student_id: student._id });
-    console.log('Student:', student);
-    console.log('Program ID:', programId);
-    console.log('Assigned courses:', assignedCourses.length);
-    console.log('Taken courses:', takenCourses.length);
+    // Step 3: Build final response
+    const courseList = enrolledCourses.map(sc => ({
+      _id: sc.course_id._id,
+      course_code: sc.course_id.course_code,
+      course_name: sc.course_id.course_name,
+      credit: sc.course_id.credit,
+      status: sc.course_id.status,
 
-    // Step 3: Map taken courses to quickly lookup grades
-    const takenMap = new Map();
-    takenCourses.forEach((course) => {
-      takenMap.set(course.course_id.toString(), {
-        obtained_credit: course.obtained_credit,
-        grade: course.grade
-      });
+      // student-specific details
+      semester: sc.semester,
+      academic_year: sc.academic_year,
+      grade: sc.grade || null,
+      obtained_credit: sc.obtained_credit || 0
+    }));
+
+    // Step 4: Calculate total earned credits
+    const totalEarnedCredits = enrolledCourses.reduce(
+      (sum, c) => sum + (c.obtained_credit || 0),
+      0
+    );
+
+    res.status(200).json({
+      student: {
+        _id: student._id,
+        student_number: student.student_number,
+        program_id: student.program_id,
+        current_semester: student.current_semester,
+        cgpa: student.cgpa
+      },
+      total_courses: enrolledCourses.length,
+      totalEarnedCredits,
+      enrolledCourses: courseList
     });
-
-    // Step 4: Prepare final result with optional grade info
-    const courseList = assignedCourses.map((course) => {
-      const taken = takenMap.get(course._id.toString());
-      return {
-        _id: course._id,
-        course_code: course.course_code,
-        course_name: course.course_name,
-        credit: course.credit,
-        semester: course.semester,
-        academic_year: course.academic_year,
-        status: course.status,
-        taken: !!taken,
-        grade: taken?.grade || null,
-        obtained_credit: taken?.obtained_credit || null
-      };
-    });
-
-    // Optional total credits if needed
-    const totalEarnedCredits = takenCourses.reduce((sum, c) => sum + (c.obtained_credit || 0), 0);
-
-    res.json({ assignedCourses: courseList, totalEarnedCredits });
-
   } catch (error) {
-    console.error(error);
+    console.error('Error fetching student courses:', error.message);
     res.status(500).json({ error: error.message });
   }
 };
 
+const getStudentById = async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id)
+      .populate('user_id')
+      .populate('department')
+      .populate('program_id');
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+    res.json(student);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const submitThesisProposal = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) return res.status(404).json({ error: 'Student not found' });
+
+    // Check eligibility (optional, for extra safety)
+    if (student.cgpa <= 2.5 || student.total_credit_hours < 9) {
+      return res.status(403).json({ error: 'Not eligible for thesis proposal submission.' });
+    }
+
+    const {
+      supervisor_id,
+      title,
+      background,
+      objective,
+      methodology,
+      estimated_cost,
+      timeline,
+      references
+    } = req.body;
+
+    if (!supervisor_id || !title || !background || !objective || !methodology) {
+      return res.status(400).json({ error: 'Required fields are missing' });
+    }
+
+    const attachment = req.file ? req.file.path : null;
+
+    const proposal = new ThesisProposal({
+      student_id: student._id,
+      supervisor_id,
+      title,
+      background,
+      objective,
+      methodology,
+      estimated_cost,
+      timeline,
+      references,
+      attachment
+    });
+
+    await proposal.save();
+
+    res.status(201).json({ message: 'Thesis proposal submitted', proposal });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 module.exports = {
   getStudentProfile,
   getStudentProgress,
-  getStudentCourses
+  getStudentCourses,
+  getStudentById,
+  submitThesisProposal
 };
+
