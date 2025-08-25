@@ -7,7 +7,7 @@ const {protect} = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload');
 
 //must be before :id
-router.get('/profile', getStudentProfile);
+router.get('/profile', protect, getStudentProfile);
 router.get('/progress', getStudentProgress);
 router.get('/courses', protect, getStudentCourses);
 
