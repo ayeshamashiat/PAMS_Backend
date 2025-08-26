@@ -20,9 +20,16 @@ const pgcRespond = async (req, res) => {
       assignment.overall_status = 'Assigned';
       sendNotification(assignment.student_id, 'Supervisor assigned!');
 
+      // Update student's supervisor_id
       await Student.findByIdAndUpdate(
         assignment.student_id,
         { supervisor_id: assignment.priority_list[idx].faculty_id }
+      );
+
+      // Increment faculty's current supervision count
+      await Faculty.findByIdAndUpdate(
+        assignment.priority_list[idx].faculty_id,
+        { $inc: { current_supervision_count: 1 } }
       );
     } else {
       assignment.priority_list[idx].status = 'PGCRejected';
@@ -52,6 +59,19 @@ const pgcManualAssign = async (req, res) => {
     assignment.accepted_faculty = facultyId;
     assignment.overall_status = 'Assigned';
     await assignment.save();
+
+    // Update student's supervisor_id
+    await Student.findByIdAndUpdate(
+      assignment.student_id,
+      { supervisor_id: facultyId }
+    );
+
+    // Increment faculty's current supervision count
+    await Faculty.findByIdAndUpdate(
+      facultyId,
+      { $inc: { current_supervision_count: 1 } }
+    );
+
     sendNotification(assignment.student_id, 'Supervisor assigned by PGC.');
     res.json({ message: 'Supervisor manually assigned by PGC.', assignment });
   } catch (error) {

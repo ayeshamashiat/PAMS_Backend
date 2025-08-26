@@ -14,7 +14,8 @@ const {
   createBulkFacultyFromCSV,
   pushCoursesFromCSV,
   autoAssignCourses,
-  assignCourseManually
+  assignCourseManually,
+  updateProfile
 } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -33,5 +34,6 @@ router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
 router.patch('/faculty/:facultyId/max-supervision-cap', protect, setMaxSupervisionCap);
+router.patch('/profile', protect, updateProfile);
 
 module.exports = router;
