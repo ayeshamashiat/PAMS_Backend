@@ -79,6 +79,4 @@ const getAvailableSupervisors = async (req, res) => {
 module.exports = {
   createAssignmentRequest,
   getAvailableSupervisors,
-  supervisorRespond,
-  pgcRespond
 };
