@@ -15,7 +15,10 @@ const {
   pushCoursesFromCSV,
   autoAssignCourses,
   assignCourseManually,
-  updateProfile
+  updateProfile,
+  getAllCourses,
+  searchStudents,
+  searchCourses
 } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -33,6 +36,9 @@ router.get('/profile', protect, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
+router.get('/courses', getAllCourses);
+router.get("/search/students", searchStudents);
+router.get("/search/courses", searchCourses);
 router.patch('/faculty/:facultyId/max-supervision-cap', protect, setMaxSupervisionCap);
 router.patch('/profile', protect, updateProfile);
 

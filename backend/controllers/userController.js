@@ -850,6 +850,68 @@ const assignCourseManually = async (req, res) => {
   }
 };
 
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special characters
+}
+
+const searchStudents = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Search query is required" });
+
+    const regex = new RegExp("^" + escapeRegex(query), "i"); // starts-with search
+
+    const students = await Student.find({ user_id: { $ne: null } })
+      .populate("user_id", "email department") // no need for names
+      .or([{ student_number: { $regex: regex } }]);
+
+    // Format for frontend
+    const formattedStudents = students.map(s => ({
+      _id: s._id,
+      student_number: s.student_number,
+      email: s.user_id?.email || "Unknown",
+    }));
+
+    res.status(200).json(formattedStudents);
+  } catch (err) {
+    console.error("❌ Student search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+const searchCourses = async (req, res) => {
+  try {
+    const { query } = req.query; // e.g. ?query=CSE22 OR ?query=Algo
+
+    if (!query) {
+      return res.status(400).json({ message: "Search query is required" });
+    }
+
+    const regex = new RegExp("^" + query, "i");
+
+    const courses = await Course.find().or([
+      { course_code: { $regex: regex } }, // code starts with query
+      { course_name: { $regex: regex } }, // name starts with query
+    ]);
+
+    res.status(200).json(courses);
+  } catch (err) {
+    console.error("❌ Course search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+const getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.status(200).json({ courses });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 
 module.exports = {
   createStudent,
@@ -865,5 +927,8 @@ module.exports = {
   pushCoursesFromCSV,
   autoAssignCourses,
   assignCourseManually,
-  updateProfile
+  updateProfile,
+  getAllCourses,
+  searchStudents,
+  searchCourses
 };
