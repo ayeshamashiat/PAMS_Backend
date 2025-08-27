@@ -7,7 +7,8 @@ const studentSchema = new mongoose.Schema({
   admission_year: { type: Number, required: true },
   current_semester: { type: Number, default: 1 },
   cgpa: { type: Number, default: 0.0 },
-  total_credit_hours: { type: Number, default: 0 },
+  total_credit_hours: { type: Number, default: 0 }, // all attempted credits
+  obtained_credits: { type: Number, default: 0 },   // ✅ completed credits
   status: {
     type: String,
     enum: ['Applied', 'Admitted', 'Enrolled', 'Graduated', 'Dropped'],

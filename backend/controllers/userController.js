@@ -5,6 +5,7 @@ const User = require('../models/user');
 const Student = require('../models/student');
 const Faculty = require('../models/faculty');
 const Course = require('../models/course');
+const StudentCourse = require('../models/studentCourse'); 
 const crypto = require('crypto'); 
 const fs = require('fs');
 const csv = require('csv-parser');
@@ -180,7 +181,6 @@ Admin Team`
     });
 };
 
-// Admin creates a faculty user manually (with generated password)
 const createFaculty = async (req, res) => {
   try {
     const {
@@ -458,6 +458,22 @@ const getAdminProfile = async (req, res) => {
   }
 };
 
+const updateProfile = async (req, res) => {
+  try {
+    const { first_name, last_name, email } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.first_name = first_name || user.first_name;
+    user.last_name = last_name || user.last_name;
+    user.email = email || user.email;
+    await user.save();
+
+    res.json({ message: 'Profile updated', user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 
 const getAllStudents = async (req, res) => {
@@ -692,75 +708,210 @@ const pushCoursesFromCSV = async (req, res) => {
         const {
           course_code,
           course_name,
+          department,
           credit,
           semester,
-          academic_year,
-          program_id,
+          academic_year
         } = row;
 
-        if (!course_code || !course_name || !credit || !semester || !academic_year || !program_id) {
-          failed.push({ course_code, reason: 'Missing required fields' });
+        // Check required fields
+        if (!course_code || !course_name || !department || !credit || !semester || !academic_year) {
+          failed.push({ course_code: course_code || 'N/A', reason: 'Missing required fields' });
           continue;
         }
 
         try {
-          const existingCourse = await Course.findOne({ $or: [{ email }] });
+          // Check if course already exists
+          const existingCourse = await Course.findOne({ course_code });
           if (existingCourse) {
-            failed.push({ course_code, reason: 'User already exists' });
+            failed.push({ course_code, reason: 'Course already exists' });
             continue;
           }
 
+          // Save new course
           const newCourse = new Course({
             course_code,
             course_name,
-            credit,
+            department,
+            credit: Number(credit), 
             semester,
-            academic_year,
-            program_id
+            academic_year
           });
 
-          const savedCourse = await newCourse.save();
-
-          const student = new Student({
-            user_id: savedUser._id,
-            student_number,
-            program_id,
-            admission_year,
-            current_semester: 1
-          });
-
-          await student.save();
-
-          await sendEmail({
-            email,
-            subject: 'Your Student Account Credentials',
-            message: `Dear ${first_name},
-
-Your student account has been created.
-
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-          });
-
+          await newCourse.save();
         } catch (err) {
-          failed.push({ student_number, reason: err.message });
+          failed.push({ course_code, reason: err.message });
         }
       }
 
       return res.status(201).json({
-        message: 'Bulk student upload completed',
+        message: 'Bulk course upload completed',
         total: results.length,
         failed: failed.length,
         errors: failed
       });
     });
+};
+
+function getSemesterFromCourseCode(code) {
+  const parts = code.split(" ");
+  if (parts.length < 2) return null;
+  const digits = parts[1];
+  return parseInt(digits[1]); 
 }
+
+const autoAssignCourses = async (req, res) => {
+  try {
+    const courses = await Course.find();
+    let created = 0, skipped = 0;
+
+    for (const course of courses) {
+      const semester = getSemesterFromCourseCode(course.course_code);
+      console.log(`📘 Course: ${course.course_code}, Dept: ${course.department}, Semester: ${semester}`);
+
+      const students = await Student.find({ current_semester: semester }).populate("user_id");
+      console.log(`  Found ${students.length} students in semester ${semester}`);
+
+      const matchedStudents = students.filter(
+        (s) => s.user_id && s.user_id.department === course.department
+      );
+      console.log(`  Matched ${matchedStudents.length} students in dept ${course.department}`);
+
+      for (const student of matchedStudents) {
+        try {
+          await StudentCourse.create({
+            student_id: student._id,
+            course_id: course._id,
+            semester,
+            academic_year: student.admission_year
+          });
+          created++;
+        } catch (err) {
+            if (err.code === 11000) {
+              skipped++;
+              console.log(`⚠️ Duplicate: ${student._id} already has ${course._id}`);
+            } else {
+              console.error("❌ Insert error:", err);
+            }
+          }
+
+      }
+    }
+
+    return res.status(200).json({ message: "Auto assignment completed", created, skipped });
+  } catch (err) {
+    console.error("❌ Auto-assign error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+
+const assignCourseManually = async (req, res) => {
+  try {
+    const { student_id, course_id } = req.body;
+
+    const student = await Student.findById(student_id).populate("user_id");
+    const course = await Course.findById(course_id);
+
+    if (!student || !course) {
+      return res.status(404).json({ message: "Student or course not found" });
+    }
+
+    if (student.user_id && course.department && student.user_id.department !== course.department) {
+      console.warn(`⚠️ Student ${student._id} department mismatch with course ${course._id}`);
+    }
+
+    const semester = getSemesterFromCourseCode(course.course_code);
+    const academic_year = String(student.admission_year); 
+
+    try {
+      const assignment = await StudentCourse.create({
+        student_id: student._id,
+        course_id: course._id,
+        semester: String(semester),
+        academic_year
+      });
+      console.log(`✅ Assigned course ${course._id} to student ${student._id}`);
+      return res.status(201).json(assignment);
+
+    } catch (err) {
+      if (err.code === 11000) {
+        console.log(`⚠️ Duplicate assignment: ${student._id} already has ${course._id}`);
+        return res.status(400).json({ message: "Course already assigned to this student" });
+      } else {
+        console.error("❌ Insert error:", err);
+        return res.status(500).json({ message: err.message });
+      }
+    }
+
+  } catch (err) {
+    console.error("❌ Manual assign error:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special characters
+}
+
+const searchStudents = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Search query is required" });
+
+    const regex = new RegExp("^" + escapeRegex(query), "i"); // starts-with search
+
+    const students = await Student.find({ user_id: { $ne: null } })
+      .populate("user_id", "email department") // no need for names
+      .or([{ student_number: { $regex: regex } }]);
+
+    // Format for frontend
+    const formattedStudents = students.map(s => ({
+      _id: s._id,
+      student_number: s.student_number,
+      email: s.user_id?.email || "Unknown",
+    }));
+
+    res.status(200).json(formattedStudents);
+  } catch (err) {
+    console.error("❌ Student search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+const searchCourses = async (req, res) => {
+  try {
+    const { query } = req.query; // e.g. ?query=CSE22 OR ?query=Algo
+
+    if (!query) {
+      return res.status(400).json({ message: "Search query is required" });
+    }
+
+    const regex = new RegExp("^" + query, "i");
+
+    const courses = await Course.find().or([
+      { course_code: { $regex: regex } }, // code starts with query
+      { course_name: { $regex: regex } }, // name starts with query
+    ]);
+
+    res.status(200).json(courses);
+  } catch (err) {
+    console.error("❌ Course search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+const getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.status(200).json({ courses });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 
 module.exports = {
   createStudent,
@@ -772,5 +923,12 @@ module.exports = {
   getAllFaculty,
   getAllPGC,
   setMaxSupervisionCap,
-  createBulkFacultyFromCSV
+  createBulkFacultyFromCSV,
+  pushCoursesFromCSV,
+  autoAssignCourses,
+  assignCourseManually,
+  updateProfile,
+  getAllCourses,
+  searchStudents,
+  searchCourses
 };

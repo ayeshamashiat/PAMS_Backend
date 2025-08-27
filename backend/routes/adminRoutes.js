@@ -11,9 +11,16 @@ const {
   getAllPGC,
   getAdminProfile,
   setMaxSupervisionCap,
-  createBulkFacultyFromCSV
+  createBulkFacultyFromCSV,
+  pushCoursesFromCSV,
+  autoAssignCourses,
+  assignCourseManually,
+  updateProfile,
+  getAllCourses,
+  searchStudents,
+  searchCourses
 } = require('../controllers/userController');
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
 
 router.post('/create-student/manual-student-creation', createStudent);
@@ -21,11 +28,18 @@ router.post('/create-faculty', createFaculty);
 router.post('/create-pgc', createPGC);
 router.post('/create-student/bulk-upload', upload.single('file'), uploadStudentsFromCSV);
 router.post('/create-faculty/bulk-upload', upload.single('file'), createBulkFacultyFromCSV);
+router.post('/upload-courses', upload.single('file'), pushCoursesFromCSV);
+router.post('/assign-courses', autoAssignCourses);
+router.post('/assign-courses-manually', assignCourseManually);
 
 router.get('/profile', protect, getAdminProfile);
 router.get('/students', getAllStudents);
 router.get('/faculty', getAllFaculty);
 router.get('/pgc', getAllPGC);
-router.patch('/faculty/:facultyId/max-supervision-cap', protect, adminOnly, setMaxSupervisionCap);
+router.get('/courses', getAllCourses);
+router.get("/search/students", searchStudents);
+router.get("/search/courses", searchCourses);
+router.patch('/faculty/:facultyId/max-supervision-cap', protect, setMaxSupervisionCap);
+router.patch('/profile', protect, updateProfile);
 
 module.exports = router;

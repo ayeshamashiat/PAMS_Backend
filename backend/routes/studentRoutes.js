@@ -1,13 +1,19 @@
+// routes/studentRoutes.js
 const express = require('express');
-const Student = require('../models/student');
 const router = express.Router();
-const {getStudentProfile, getStudentProgress, getStudentCourses} = require('../controllers/studentController');
+const {
+  getStudentProfile,
+  submitThesisProposal,
+  getStudentProgress,
+  getStudentCourses,
+  getStudentById
+} = require('../controllers/studentController');
+const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); 
 const { protect } = require('../middleware/authMiddleware');
-const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); // Add this line
+const upload = require('../middleware/upload');
 
-//must be before :id
 router.get('/profile', protect, getStudentProfile);
-router.get('/progress', getStudentProgress);
+router.get('/progress', protect, getStudentProgress);
 router.get('/courses', protect, getStudentCourses);
 
 router.post('/', async (req, res) => {
@@ -20,19 +26,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  try {
-    const student = await Student.findById(req.params.id)
-      .populate('userId')
-      .populate('department')
-      .exec();
-    if (!student) return res.status(404).json({ error: 'Student not found' });
-    res.json(student);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
+router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
+router.post('/submit', protect, upload.single('attachment'), submitThesisProposal);
 
 module.exports = router;

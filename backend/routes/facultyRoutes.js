@@ -11,21 +11,21 @@ const {
 const { protect } = require('../middleware/authMiddleware');
 
 // View supervised students (with thesis info)
-router.get('/supervised-students', getSupervisedStudents);
+router.get('/supervised-students', protect, getSupervisedStudents);
 
 // View pending supervisor requests (priority list)
 router.get('/supervisor-requests', protect, getPendingSupervisorRequests);
 
 // Accept/reject supervisor requests
-router.post('/supervisor-respond', supervisorRespond);
+router.post('/supervisor-respond', protect, supervisorRespond);
 
 // View supervision quota/load
-router.get('/supervision-quota', getSupervisionQuota);
+router.get('/supervision-quota', protect, getSupervisionQuota);
 
 // View thesis proposals from supervised students
-router.get('/thesis-proposals', getProposalsFromSupervisedStudents);
+router.get('/thesis-proposals', protect, getProposalsFromSupervisedStudents);
 
 // Review thesis proposal (give feedback, approve, request revision)
-router.post('/thesis-proposal/review', reviewThesisProposal);
+router.post('/thesis-proposal/review', protect, reviewThesisProposal);
 
 module.exports = router;

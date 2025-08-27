@@ -3,10 +3,10 @@ const mongoose = require('mongoose');
 const courseSchema = new mongoose.Schema({
   course_code:    { type: String, required: true, unique: true },
   course_name:    { type: String, required: true },
+  department:     { type: String, required: true },
   credit:         { type: Number, required: true },
-  semester:       { type: String, required: true }, // e.g., 'Summer', 'Winter'
-  academic_year:  { type: String, required: true }, // e.g., '2023-2024'
-  program_id:     { type: mongoose.Schema.Types.ObjectId, ref: 'Program' }, // optional, if courses are program-specific
+  semester:       { type: String, required: true }, 
+  academic_year:  { type: String, required: true }, 
 });
 
 module.exports = mongoose.model('Course', courseSchema);

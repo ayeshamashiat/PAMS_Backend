@@ -11,7 +11,6 @@ const storage = multer.diskStorage({
   }
 });
 
-// Accept only CSV files
 const fileFilter = (req, file, cb) => {
   if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
     cb(null, true);
