@@ -1,13 +1,19 @@
+// routes/studentRoutes.js
 const express = require('express');
-const Student = require('../models/student');
 const router = express.Router();
-const {getStudentProfile, submitThesisProposal, getStudentProgress, getStudentCourses, getStudentById} = require('../controllers/studentController');
+const {
+  getStudentProfile,
+  submitThesisProposal,
+  getStudentProgress,
+  getStudentCourses,
+  getStudentById
+} = require('../controllers/studentController');
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); 
-const {protect} = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload');
 
 router.get('/profile', protect, getStudentProfile);
-router.get('/progress', getStudentProgress);
+router.get('/progress', protect, getStudentProgress);
 router.get('/courses', protect, getStudentCourses);
 
 router.post('/', async (req, res) => {
@@ -19,8 +25,9 @@ router.post('/', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
 router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
-router.post('/submit', upload.single('attachment'), submitThesisProposal);
+router.post('/submit', protect, upload.single('attachment'), submitThesisProposal);
 
 module.exports = router;
