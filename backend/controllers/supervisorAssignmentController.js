@@ -69,12 +69,14 @@ const getAvailableSupervisors = async (req, res) => {
   try {
     const availableSupervisors = await Faculty.find({
       $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] }
-    });
+    }).populate("user_id", "first_name last_name email"); // 👈 pull user info
+
     res.json({ availableSupervisors });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
+
 
 module.exports = {
   createAssignmentRequest,
