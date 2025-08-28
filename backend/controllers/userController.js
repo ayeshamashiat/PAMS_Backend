@@ -920,6 +920,56 @@ const getAllCourses = async (req, res) => {
   }
 };
 
+const editCGPA = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+    const { cgpa } = req.body;
+
+    if (typeof cgpa !== 'number' || cgpa < 0 || cgpa > 4) {
+      return res.status(400).json({ message: 'CGPA must be a number between 0 and 4' });
+    }
+
+    const student = await Student.findByIdAndUpdate(
+      student_id,
+      { cgpa },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({ message: 'CGPA updated successfully', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const editObtainedCredits = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+    const { obtained_credits } = req.body;
+
+    if (typeof obtained_credits !== 'number' || obtained_credits < 0) {
+      return res.status(400).json({ message: 'Obtained credits must be a non-negative number' });
+    }
+
+    const student = await Student.findByIdAndUpdate(
+      student_id,
+      { obtained_credits },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({ message: 'Obtained credits updated successfully', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 
 module.exports = {
   createStudent,
@@ -938,5 +988,7 @@ module.exports = {
   updateProfile,
   getAllCourses,
   searchStudents,
-  searchCourses
+  searchCourses,
+  editCGPA,
+  editObtainedCredits
 };
