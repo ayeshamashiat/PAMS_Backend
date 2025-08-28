@@ -98,35 +98,69 @@ const reviewThesisProposal = async (req, res) => {
 
 const supervisorRespond = async (req, res) => {
   try {
-    const { assignmentId, response } = req.body; // response: 'Accepted' or 'Rejected'
+    // 1️⃣ Get the logged-in faculty from JWT (req.user comes from your auth middleware)
+    const userId = req.user.id; // JWT stores User._id
+    const faculty = await Faculty.findOne({ user_id: userId });
+    if (!faculty) {
+      return res.status(403).json({ message: "Faculty record not found for this user." });
+    }
+    const facultyId = faculty._id;
+
+    // 2️⃣ Extract assignmentId and response from request body
+    const { assignmentId, response } = req.body; // "Accepted" | "Rejected"
+
+    // 3️⃣ Find the SupervisorAssignment
     const assignment = await SupervisorAssignment.findById(assignmentId);
-    if (!assignment) return res.status(404).json({ message: 'Assignment not found.' });
+    if (!assignment) {
+      return res.status(404).json({ message: "Assignment not found." });
+    }
 
+    // 4️⃣ Check current priority faculty
     const idx = assignment.current_priority_index;
-    if (assignment.priority_list[idx].status !== 'Requested') {
-      return res.status(400).json({ message: 'No pending request for this supervisor.' });
+    const current = assignment.priority_list[idx];
+    if (!current || String(current.faculty_id) !== String(facultyId)) {
+      return res.status(403).json({ message: "You are not authorized to respond to this request." });
     }
 
-    if (response === 'Accepted') {
-      assignment.priority_list[idx].status = 'Supervisor Accepted';
-      assignment.accepted_faculty = assignment.priority_list[idx].faculty_id;
-      // Notify PGC for approval
-      sendNotification('PGC_USER_ID', 'Supervisor accepted. Awaiting your approval.');
-    } else {
-      assignment.priority_list[idx].status = 'Rejected';
-      assignment.current_priority_index += 1;
-      if (assignment.current_priority_index < assignment.priority_list.length) {
-        assignment.priority_list[assignment.current_priority_index].status = 'Requested';
-        sendNotification(assignment.priority_list[assignment.current_priority_index].faculty_id, 'You have a new supervision request.');
-      } else {
-        assignment.overall_status = 'Failed';
-        sendNotification(assignment.student_id, 'All supervisor requests rejected.');
-      }
+    if (current.status !== "Requested") {
+      return res.status(400).json({ message: "No pending request for you." });
     }
+
+    // 5️⃣ Handle Accept/Reject
+    if (response === "Accepted") {
+      current.status = "Accepted";
+      assignment.accepted_faculty = facultyId;
+      assignment.overall_status = "Assigned";
+
+      // Update student supervisor
+      await Student.findByIdAndUpdate(assignment.student_id, {
+        supervisor_id: facultyId,
+      });
+
+      // Increment faculty supervision count
+      await Faculty.findByIdAndUpdate(facultyId, {
+        $inc: { current_supervision_count: 1 },
+      });
+    } else if (response === "Rejected") {
+      current.status = "Rejected";
+      assignment.current_priority_index += 1;
+
+      // Move to next priority faculty if any
+      if (assignment.current_priority_index < assignment.priority_list.length) {
+        assignment.priority_list[assignment.current_priority_index].status = "Requested";
+      } else {
+        assignment.overall_status = "Failed";
+      }
+    } else {
+      return res.status(400).json({ message: "Invalid response. Must be 'Accepted' or 'Rejected'." });
+    }
+
     await assignment.save();
-    res.json({ message: 'Supervisor response recorded.', assignment });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.json({ message: "Response recorded.", assignment });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message });
   }
 };
 
