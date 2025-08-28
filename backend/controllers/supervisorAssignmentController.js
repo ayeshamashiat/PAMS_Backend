@@ -41,7 +41,7 @@ const createAssignmentRequest = async (req, res) => {
     if (!student) return res.status(404).json({ message: 'Student not found' });
 
     // ✅ Eligibility check
-    if (student.obtained_credit < 9) {
+    if (student.obtained_credits < 9) {
       return res.status(403).json({
         message: 'You are not eligible to request a supervisor (requires ≥9 credits).',
       });

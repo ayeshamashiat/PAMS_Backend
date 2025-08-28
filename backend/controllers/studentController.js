@@ -159,10 +159,49 @@ const submitThesisProposal = async (req, res) => {
   }
 };
 
+const getResult = async (req, res) => {
+  try {
+    // req.user._id should come from JWT middleware
+    const student = await Student.findOne({ user_id: req.user._id });
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({
+      cgpa: student.cgpa.toFixed(2),   // format nicely
+      current_semester: student.current_semester,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const checkSupervisorEligibility = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user.id });
+    if (!student) {
+      return res.status(404).json({ isEligible: false, message: 'Student not found' });
+    }
+    const isEligible = student.obtained_credits >= 9;
+    res.status(200).json({
+      isEligible,
+      message: isEligible
+        ? 'Eligible for supervisor assignment.'
+        : 'Not eligible for supervisor assignment (need ≥ 9 credits).',
+    });
+  } catch (err) {
+    res.status(500).json({ isEligible: false, message: 'Server error' });
+  }
+};
+
 module.exports = {
   getStudentProfile,
   getStudentProgress,
   getStudentCourses,
   getStudentById,
-  submitThesisProposal
+  submitThesisProposal,
+  getResult,
+  checkSupervisorEligibility
 };
