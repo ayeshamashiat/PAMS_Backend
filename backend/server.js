@@ -10,6 +10,7 @@ const createHardcodedAdmin = require('./utils/createAdminUser');
 const cors = require("cors");
 const notificationRoutes = require('./routes/notificationRoutes');
 const facultyRoutes = require('./routes/facultyRoutes');
+const bodyParser = require('body-parser');
 
 
 dotenv.config();
@@ -17,6 +18,7 @@ const app = express();
 const PORT = 8080;
 
 app.use(express.json());
+app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true })); 
 
 app.use(cors({ origin: "http://localhost:3000", credentials: true }));

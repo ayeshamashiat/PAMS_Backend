@@ -263,6 +263,89 @@ Admin Team`
   }
 };
 
+const createPGC = async (req, res) => {
+  try {
+    const {
+      faculty_number,
+      email,
+      first_name,
+      last_name,
+      department,
+      designation,
+      specialization,
+      research_interests
+    } = req.body;
+
+    if (!faculty_number || !email || !first_name || !last_name || !department || !designation) {
+      return res.status(400).json({ message: 'Required fields are missing' });
+    }
+
+    // Check if email or faculty_number already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { faculty_number }] });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' });
+    }
+
+    const rawPassword = generatePassword();
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+    const newUser = new User({
+      email,
+      password_hash: hashedPassword,
+      first_name,
+      last_name,
+      department,
+      role: 'PGC'
+    });
+
+    const savedUser = await newUser.save();
+
+    const newFaculty = new Faculty({
+      user_id: savedUser._id,
+      employee_id: faculty_number,
+      department_id: null,
+      designation,
+      specialization: specialization || '',
+      research_interests: research_interests || '',
+      max_supervision_capacity: null, // Not applicable for PGC
+      current_supervision_count: null // Not applicable for PGC
+    });
+
+    await newFaculty.save();
+
+    // Send credentials via email
+    await sendEmail({
+      email,
+      subject: 'Your PGC Account Credentials',
+      message: `Dear ${first_name},
+
+Your PGC committee account has been created.
+
+Your Faculty Number: ${faculty_number}
+Login credentials:
+Email: ${email}
+Password: ${rawPassword}
+
+Please change your password after logging in.
+
+Regards,
+Admin Team`
+    });
+
+    res.status(201).json({
+      message: 'PGC member created successfully',
+      credentials: {
+        email,
+        password: rawPassword
+      }
+    });
+
+  } catch (error) {
+    console.error('Create PGC error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 const createBulkFacultyFromCSV = async (req, res) => {
   try {
     if (!req.file) {
@@ -362,81 +445,6 @@ Admin Team`
 
   } catch (error) {
     console.error('CSV upload error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const createPGC = async (req, res) => {
-  try {
-    const {
-      user_id,
-      email,
-      first_name,
-      last_name,
-      designation,
-      department
-    } = req.body;
-
-    if (!user_id || !email || !first_name || !last_name || !designation || !department) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
-    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
-    if (existingUser) {
-      return res.status(409).json({ message: 'User already exists' });
-    }
-
-    const rawPassword = generatePassword();
-    const hashedPassword = await bcrypt.hash(rawPassword, 10);
-
-    const newUser = new User({
-      user_id,
-      email,
-      password_hash: hashedPassword,
-      first_name,
-      last_name,
-      department,
-      program: '',
-      role: 'PGC'
-    });
-
-    const savedUser = await newUser.save();
-
-    const FacultyModel = require('../models/faculty');
-    const pgcAsFaculty = new FacultyModel({
-      user_id: savedUser._id,
-      employee_id: user_id,
-      designation,
-      department_id: null 
-    });
-    await pgcAsFaculty.save();
-
-    await sendEmail({
-      email,
-      subject: 'Your PGC Account Credentials',
-      message: `Dear ${first_name},
-
-Your PGC committee account has been created.
-
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-    });
-
-    res.status(201).json({
-      message: 'PGC member created successfully',
-      credentials: {
-        email,
-        password: rawPassword
-      }
-    });
-  } catch (error) {
-    console.error('Create PGC error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
