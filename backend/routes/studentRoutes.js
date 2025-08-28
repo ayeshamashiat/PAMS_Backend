@@ -10,7 +10,8 @@ const {
   getResult,
   checkSupervisorEligibility
 } = require('../controllers/studentController');
-const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); 
+const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes');
+const thesisProposalEligibility = require('./thesisProgressRoutes'); 
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload');
 
@@ -31,7 +32,7 @@ router.get('/result', protect, getResult);
 
 router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
-router.post('/submit', protect, upload.single('attachment'), submitThesisProposal);
+router.post('/submit/check', protect, upload.single('attachment'), submitThesisProposal);
 router.get('/supervisor-assignment/check-eligibility', protect, checkSupervisorEligibility);
 
 module.exports = router;

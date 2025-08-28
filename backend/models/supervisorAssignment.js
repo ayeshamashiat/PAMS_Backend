@@ -5,13 +5,20 @@ const supervisorAssignmentSchema = new mongoose.Schema({
   priority_list: [
     {
       faculty_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', required: true },
-      status: { type: String, enum: ['NotAssigned', 'Requested', 'Rejected', 'Accepted', 'PGCRejected', 'PGCAccepted'], default: 'NotAssigned' }
+      status: {
+        type: String,
+        enum: ['NotAssigned', 'Requested', 'Rejected', 'Accepted', 'PGCRejected', 'PGCAccepted'],
+        default: 'NotAssigned'
+      }
     }
   ],
   current_priority_index: { type: Number, default: 0 },
-  overall_status: { type: String, enum: ['Pending', 'Assigned', 'Failed'], default: 'Pending' },
-  accepted_faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', default: null },
-  createdAt: { type: Date, default: Date.now }
-});
+  overall_status: {
+    type: String,
+    enum: ['Pending', 'Assigned', 'Failed'],
+    default: 'Pending'
+  },
+  accepted_faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', default: null }, // ✅ cache
+}, { timestamps: true });
 
 module.exports = mongoose.model('SupervisorAssignment', supervisorAssignmentSchema);
