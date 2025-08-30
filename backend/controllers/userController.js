@@ -23,17 +23,18 @@ const createStudent = async (req, res) => {
       last_name,
       program_id, 
       department,
-      admission_year
+      admission_year,
+      supervisor_id
     } = req.body;
 
     if (!student_number  || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
-    // if (existingUser) {
-    //   return res.status(409).json({ message: 'User already exists' });
-    // }
+    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' });
+    }
 
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
@@ -54,7 +55,8 @@ const createStudent = async (req, res) => {
       student_number: student_number,
       program_id: program_id,
       admission_year: admission_year,
-      current_semester: 1
+      current_semester: 1,
+      supervisor_id: null
     });
 
     await student.save();
@@ -110,7 +112,8 @@ const uploadStudentsFromCSV = async (req, res) => {
           last_name,
           program_id,
           department,
-          admission_year
+          admission_year,
+          supervisor_id 
         } = row;
 
         if (!student_number || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
@@ -144,7 +147,8 @@ const uploadStudentsFromCSV = async (req, res) => {
             student_number,
             program_id,
             admission_year,
-            current_semester: 1
+            current_semester: 1,
+            supervisor_id: null
           });
 
           await student.save();
