@@ -1,21 +1,25 @@
 const multer = require('multer');
 const path = require('path');
 
-// Set storage destination and filename
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); 
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/'); // or your desired folder
   },
-  filename: (req, file, cb) => {
-    cb(null, `students_${Date.now()}${path.extname(file.originalname)}`);
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+  // Allow PDF for thesis proposal, CSV for student bulk upload
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (
+    (req.baseUrl.includes('/students') && req.url.includes('/submit/check') && ext === '.pdf') ||
+    ext === '.csv'
+  ) {
     cb(null, true);
   } else {
-    cb(new Error('Only CSV files are allowed'), false);
+    cb(new Error('Only PDF files are allowed for thesis proposal, and CSV for bulk upload'), false);
   }
 };
 

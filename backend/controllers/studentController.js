@@ -113,25 +113,39 @@ const getStudentById = async (req, res) => {
 
 const submitThesisProposal = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user.id });
-    if (!student) return res.status(404).json({ message: "Student not found" });
+    console.log("Logged-in user:", req.user); // check token info
+    console.log("Form body:", req.body);      // debug form fields
+    console.log("File:", req.file);           // debug uploaded file
 
-    // ✅ Eligibility check
-    if (student.cgpa <= 2.5 || student.obtained_credits < 9) {
-      return res.status(403).json({ message: "Not eligible: insufficient CGPA or credits." });
+    // 1️⃣ Fetch student
+    const student = await Student.findOne({ user_id: req.user?.id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
     }
 
+    // 2️⃣ Eligibility check
+    if ((student.cgpa ?? 0) <= 2.5 || (student.obtained_credits ?? 0) < 9) {
+      return res.status(403).json({ message: "Not eligible: insufficient CGPA or credits." });
+    }
     if (!student.supervisor_id) {
       return res.status(403).json({ message: "Not eligible: no supervisor assigned." });
     }
 
-    // Check if already submitted
+    // 3️⃣ Check if already submitted
     const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
     if (existingProposal) {
       return res.status(400).json({ message: "Thesis proposal already submitted." });
     }
 
-    // ✅ Save proposal
+    // 4️⃣ Validate required fields
+    const requiredFields = ["research_topic", "title", "background", "objective", "methodology"];
+    for (let field of requiredFields) {
+      if (!req.body[field]) {
+        return res.status(400).json({ message: `Missing required field: ${field}` });
+      }
+    }
+
+    // 5️⃣ Save proposal
     const proposal = new ThesisProposal({
       student_id: student._id,
       supervisor_id: student.supervisor_id,
@@ -140,18 +154,22 @@ const submitThesisProposal = async (req, res) => {
       background: req.body.background,
       objective: req.body.objective,
       methodology: req.body.methodology,
-      estimated_cost: req.body.estimated_cost,
-      timeline: req.body.timeline,
-      references: req.body.references,
-      attachment: req.file?.path,
+      estimated_cost: req.body.estimated_cost || "",
+      timeline: req.body.timeline || "",
+      references: req.body.references || "",
+      attachment: req.file?.path || null,
+      submittedAt: new Date(),
     });
 
     await proposal.save();
 
-    res.status(200).json({ message: "✅ Thesis proposal submitted successfully!" });
+    return res.status(200).json({ message: "✅ Thesis proposal submitted successfully!" });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Error in submitThesisProposal:", err);
+
+    // 6️⃣ Catch any unexpected error safely
+    return res.status(500).json({ message: "Server error. Please try again later." });
   }
 };
 

@@ -7,9 +7,12 @@ const {
     getSupervisionQuota,
     getProposalsFromSupervisedStudents,
     reviewThesisProposal,
-    getAcceptedSupervisionStudents
+    getAcceptedSupervisionStudents,
+    getFacultyProfile
 } = require('../controllers/facultyController');
 const { protect } = require('../middleware/authMiddleware');
+
+router.get('/profile', protect, getFacultyProfile);
 
 // View supervised students (with thesis info)
 router.get('/supervised-students', protect, getSupervisedStudents);

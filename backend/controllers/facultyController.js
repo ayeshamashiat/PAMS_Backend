@@ -2,7 +2,29 @@ const Student = require('../models/student');
 const ThesisProposal = require('../models/thesisProposal');
 const SupervisorAssignment = require('../models/supervisorAssignment');
 const Faculty = require('../models/faculty');
+const User = require('../models/user');
 const { sendNotification } = require('../utils/notification');
+
+const getFacultyProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const faculty = await Faculty.findOne({ user_id: user._id });
+    if (!faculty) return res.status(404).json({ message: "Faculty profile not found" });
+
+    res.status(200).json({
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      role: user.role,
+      max_supervision_capacity: faculty.max_supervision_capacity
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
 const getSupervisedStudents = async (req, res) => {
   try {
@@ -195,5 +217,6 @@ module.exports = {
   getProposalsFromSupervisedStudents,
   reviewThesisProposal,
   supervisorRespond,
-  getAcceptedSupervisionStudents
+  getAcceptedSupervisionStudents,
+  getFacultyProfile
 };
