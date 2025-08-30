@@ -8,7 +8,8 @@ const {
   getStudentCourses,
   getStudentById,
   getResult,
-  checkSupervisorEligibility
+  checkSupervisorEligibility,
+  checkAssignmentStatus
 } = require('../controllers/studentController');
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes');
 const thesisProposalEligibility = require('./thesisProgressRoutes'); 
@@ -34,5 +35,6 @@ router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 router.post('/submit/check', protect, upload.single('attachment'), submitThesisProposal);
 router.get('/supervisor-assignment/check-eligibility', protect, checkSupervisorEligibility);
+router.get('/assignment/check-status', protect, checkAssignmentStatus);
 
 module.exports = router;

@@ -10,6 +10,7 @@ const createHardcodedAdmin = require('./utils/createAdminUser');
 const cors = require("cors");
 const notificationRoutes = require('./routes/notificationRoutes');
 const facultyRoutes = require('./routes/facultyRoutes');
+const pgcRoutes = require('./routes/pgcRoutes');
 const bodyParser = require('body-parser');
 
 
@@ -43,3 +44,4 @@ app.use('/api/user', userRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/faculty', facultyRoutes);
+app.use('/api/pgc', pgcRoutes);

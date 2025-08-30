@@ -98,7 +98,6 @@ const reviewThesisProposal = async (req, res) => {
 
 const supervisorRespond = async (req, res) => {
   try {
-    // 1️⃣ Get the logged-in faculty from JWT (req.user comes from your auth middleware)
     const userId = req.user.id; // JWT stores User._id
     const faculty = await Faculty.findOne({ user_id: userId });
     if (!faculty) {
@@ -106,18 +105,16 @@ const supervisorRespond = async (req, res) => {
     }
     const facultyId = faculty._id;
 
-    // 2️⃣ Extract assignmentId and response from request body
     const { assignmentId, response } = req.body; // "Accepted" | "Rejected"
 
-    // 3️⃣ Find the SupervisorAssignment
     const assignment = await SupervisorAssignment.findById(assignmentId);
     if (!assignment) {
       return res.status(404).json({ message: "Assignment not found." });
     }
 
-    // 4️⃣ Check current priority faculty
     const idx = assignment.current_priority_index;
     const current = assignment.priority_list[idx];
+
     if (!current || String(current.faculty_id) !== String(facultyId)) {
       return res.status(403).json({ message: "You are not authorized to respond to this request." });
     }
@@ -126,11 +123,10 @@ const supervisorRespond = async (req, res) => {
       return res.status(400).json({ message: "No pending request for you." });
     }
 
-    // 5️⃣ Handle Accept/Reject
     if (response === "Accepted") {
-      current.status = "Accepted";
+      current.status = "SupervisorAccepted";   // ✅ set correctly
       assignment.accepted_faculty = facultyId;
-      assignment.overall_status = "Assigned";
+      assignment.overall_status = "Pending";  // optional: mark assignment done
 
       // Update student supervisor
       await Student.findByIdAndUpdate(assignment.student_id, {
@@ -141,8 +137,9 @@ const supervisorRespond = async (req, res) => {
       await Faculty.findByIdAndUpdate(facultyId, {
         $inc: { current_supervision_count: 1 },
       });
+
     } else if (response === "Rejected") {
-      current.status = "Rejected";
+      current.status = "SupervisorRejected";   // ✅ set correctly
       assignment.current_priority_index += 1;
 
       // Move to next priority faculty if any
@@ -164,11 +161,39 @@ const supervisorRespond = async (req, res) => {
   }
 };
 
+
+const getAcceptedSupervisionStudents = async (req, res) => {
+  try {
+    const faculty = await Faculty.findOne({ user_id: req.user._id });
+    if (!faculty) return res.status(404).json({ message: 'Faculty not found' });
+
+    // Find assignments where this faculty accepted supervision
+    const assignments = await SupervisorAssignment.find({
+      'priority_list': {
+        $elemMatch: {
+          faculty_id: faculty._id,
+          status: 'SupervisorAccepted'
+        }
+      }
+    });
+
+    const studentIds = assignments.map(a => a.student_id);
+    const students = await Student.find({ _id: { $in: studentIds } })
+      .populate('user_id', 'first_name last_name email')
+      .lean();
+
+    res.json({ students });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   getSupervisedStudents,
   getPendingSupervisorRequests,
   getSupervisionQuota,
   getProposalsFromSupervisedStudents,
   reviewThesisProposal,
-  supervisorRespond
+  supervisorRespond,
+  getAcceptedSupervisionStudents
 };

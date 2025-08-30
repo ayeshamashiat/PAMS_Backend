@@ -818,48 +818,59 @@ const assignCourseManually = async (req, res) => {
   try {
     const { student_id, course_id } = req.body;
 
-    const student = await Student.findById(student_id).populate("user_id");
-    const course = await Course.findById(course_id);
+    // Student lookup (ObjectId or student_number)
+    let student;
+    try {
+      student = await Student.findById(student_id).populate("user_id");
+    } catch {
+      student = null;
+    }
+    if (!student) {
+      student = await Student.findOne({ student_number: student_id }).populate("user_id");
+    }
+
+    // Course lookup (ObjectId or course_code)
+    let course;
+    try {
+      course = await Course.findById(course_id);
+    } catch {
+      course = null;
+    }
+    if (!course) {
+      course = await Course.findOne({ course_code: course_id });
+    }
 
     if (!student || !course) {
       return res.status(404).json({ message: "Student or course not found" });
     }
 
+    // Department check
     if (student.user_id && course.department && student.user_id.department !== course.department) {
-      console.warn(`⚠️ Student ${student._id} department mismatch with course ${course._id}`);
+      return res.status(400).json({ message: "Course department does not match student's department" });
     }
-
-    const semester = getSemesterFromCourseCode(course.course_code);
-    const academic_year = String(student.admission_year); 
 
     try {
       const assignment = await StudentCourse.create({
         student_id: student._id,
         course_id: course._id,
-        semester: String(semester),
-        academic_year
       });
-      console.log(`✅ Assigned course ${course._id} to student ${student._id}`);
       return res.status(201).json(assignment);
 
     } catch (err) {
       if (err.code === 11000) {
-        console.log(`⚠️ Duplicate assignment: ${student._id} already has ${course._id}`);
         return res.status(400).json({ message: "Course already assigned to this student" });
       } else {
-        console.error("❌ Insert error:", err);
         return res.status(500).json({ message: err.message });
       }
     }
 
   } catch (err) {
-    console.error("❌ Manual assign error:", err);
     return res.status(500).json({ message: err.message });
   }
 };
 
 function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // Escape special characters
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 const searchStudents = async (req, res) => {
@@ -867,13 +878,13 @@ const searchStudents = async (req, res) => {
     const { query } = req.query;
     if (!query) return res.status(400).json({ message: "Search query is required" });
 
-    const regex = new RegExp("^" + escapeRegex(query), "i"); // starts-with search
+    const regex = new RegExp("^" + escapeRegex(query), "i");
 
-    const students = await Student.find({ user_id: { $ne: null } })
-      .populate("user_id", "email department") // no need for names
-      .or([{ student_number: { $regex: regex } }]);
+    const students = await Student.find({
+      user_id: { $ne: null },
+      $or: [{ student_number: { $regex: regex } }]
+    }).populate("user_id", "email department");
 
-    // Format for frontend
     const formattedStudents = students.map(s => ({
       _id: s._id,
       student_number: s.student_number,
@@ -887,21 +898,19 @@ const searchStudents = async (req, res) => {
   }
 };
 
-
 const searchCourses = async (req, res) => {
   try {
-    const { query } = req.query; // e.g. ?query=CSE22 OR ?query=Algo
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Search query is required" });
 
-    if (!query) {
-      return res.status(400).json({ message: "Search query is required" });
-    }
+    const regex = new RegExp("^" + escapeRegex(query), "i");
 
-    const regex = new RegExp("^" + query, "i");
-
-    const courses = await Course.find().or([
-      { course_code: { $regex: regex } }, // code starts with query
-      { course_name: { $regex: regex } }, // name starts with query
-    ]);
+    const courses = await Course.find({
+      $or: [
+        { course_code: { $regex: regex } },
+        { course_name: { $regex: regex } },
+      ]
+    });
 
     res.status(200).json(courses);
   } catch (err) {
@@ -909,7 +918,6 @@ const searchCourses = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 const getAllCourses = async (req, res) => {
   try {

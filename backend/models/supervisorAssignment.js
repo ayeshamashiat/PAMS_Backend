@@ -7,7 +7,7 @@ const supervisorAssignmentSchema = new mongoose.Schema({
       faculty_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', required: true },
       status: {
         type: String,
-        enum: ['NotAssigned', 'Requested', 'Rejected', 'Accepted', 'PGCRejected', 'PGCAccepted'],
+        enum: ['NotAssigned', 'Requested', 'Rejected', 'SupervisorAccepted', 'SupervisorRejected', 'PGCRejected', 'PGCAccepted'],
         default: 'NotAssigned'
       }
     }

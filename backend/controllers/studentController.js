@@ -3,6 +3,7 @@ const User = require('../models/user');
 const Student = require('../models/student');
 const StudentCourse = require('../models/studentCourse');
 const ThesisProposal = require('../models/thesisProposal');
+const SupervisorAssignment = require('../models/supervisorAssignment');
 const { computeUnlockedStages } = require('../services/progressService');
 
 const getStudentProfile = async (req, res) => {
@@ -191,6 +192,43 @@ const checkSupervisorEligibility = async (req, res) => {
   }
 };
 
+const checkAssignmentStatus = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    const assignment = await SupervisorAssignment.findOne({ student_id: student._id })
+      .populate({
+        path: "student_id",
+        populate: [
+          { path: "user_id", select: "first_name last_name email department" },
+          { path: "program_id", select: "degree_type program_name" }
+        ]
+      })
+      .populate({
+        path: "priority_list.faculty_id",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      })
+      .populate({
+        path: "accepted_faculty",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      });
+
+    if (!assignment) {
+      return res.status(404).json({ message: "No supervisor assignment found for this student." });
+    }
+
+    res.json({ assignment });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 module.exports = {
   getStudentProfile,
   getStudentProgress,
@@ -198,5 +236,6 @@ module.exports = {
   getStudentById,
   submitThesisProposal,
   getResult,
-  checkSupervisorEligibility
+  checkSupervisorEligibility,
+  checkAssignmentStatus,
 };

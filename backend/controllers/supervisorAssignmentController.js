@@ -69,7 +69,6 @@ const createAssignmentRequest = async (req, res) => {
 
     await assignment.save();
 
-    // Notify first supervisor
     sendNotification(priorityFacultyIds[0], 'You have a new supervision request.');
 
     res.status(201).json({ message: 'Supervisor assignment request created.', assignment });
@@ -79,7 +78,6 @@ const createAssignmentRequest = async (req, res) => {
   }
 };
 
-// ✅ Fetch Available Supervisors
 const getAvailableSupervisors = async (req, res) => {
   try {
     const availableSupervisors = await Faculty.find({
