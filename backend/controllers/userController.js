@@ -23,17 +23,18 @@ const createStudent = async (req, res) => {
       last_name,
       program_id, 
       department,
-      admission_year
+      admission_year,
+      supervisor_id
     } = req.body;
 
     if (!student_number  || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
-    // if (existingUser) {
-    //   return res.status(409).json({ message: 'User already exists' });
-    // }
+    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' });
+    }
 
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
@@ -54,7 +55,8 @@ const createStudent = async (req, res) => {
       student_number: student_number,
       program_id: program_id,
       admission_year: admission_year,
-      current_semester: 1
+      current_semester: 1,
+      supervisor_id: null
     });
 
     await student.save();
@@ -110,7 +112,8 @@ const uploadStudentsFromCSV = async (req, res) => {
           last_name,
           program_id,
           department,
-          admission_year
+          admission_year,
+          supervisor_id 
         } = row;
 
         if (!student_number || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
@@ -144,7 +147,8 @@ const uploadStudentsFromCSV = async (req, res) => {
             student_number,
             program_id,
             admission_year,
-            current_semester: 1
+            current_semester: 1,
+            supervisor_id: null
           });
 
           await student.save();
@@ -263,6 +267,89 @@ Admin Team`
   }
 };
 
+const createPGC = async (req, res) => {
+  try {
+    const {
+      faculty_number,
+      email,
+      first_name,
+      last_name,
+      department,
+      designation,
+      specialization,
+      research_interests
+    } = req.body;
+
+    if (!faculty_number || !email || !first_name || !last_name || !department || !designation) {
+      return res.status(400).json({ message: 'Required fields are missing' });
+    }
+
+    // Check if email or faculty_number already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { faculty_number }] });
+    if (existingUser) {
+      return res.status(409).json({ message: 'User already exists' });
+    }
+
+    const rawPassword = generatePassword();
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+    const newUser = new User({
+      email,
+      password_hash: hashedPassword,
+      first_name,
+      last_name,
+      department,
+      role: 'PGC'
+    });
+
+    const savedUser = await newUser.save();
+
+    const newFaculty = new Faculty({
+      user_id: savedUser._id,
+      employee_id: faculty_number,
+      department_id: null,
+      designation,
+      specialization: specialization || '',
+      research_interests: research_interests || '',
+      max_supervision_capacity: null, // Not applicable for PGC
+      current_supervision_count: null // Not applicable for PGC
+    });
+
+    await newFaculty.save();
+
+    // Send credentials via email
+    await sendEmail({
+      email,
+      subject: 'Your PGC Account Credentials',
+      message: `Dear ${first_name},
+
+Your PGC committee account has been created.
+
+Your Faculty Number: ${faculty_number}
+Login credentials:
+Email: ${email}
+Password: ${rawPassword}
+
+Please change your password after logging in.
+
+Regards,
+Admin Team`
+    });
+
+    res.status(201).json({
+      message: 'PGC member created successfully',
+      credentials: {
+        email,
+        password: rawPassword
+      }
+    });
+
+  } catch (error) {
+    console.error('Create PGC error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
 const createBulkFacultyFromCSV = async (req, res) => {
   try {
     if (!req.file) {
@@ -362,81 +449,6 @@ Admin Team`
 
   } catch (error) {
     console.error('CSV upload error:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-};
-
-const createPGC = async (req, res) => {
-  try {
-    const {
-      user_id,
-      email,
-      first_name,
-      last_name,
-      designation,
-      department
-    } = req.body;
-
-    if (!user_id || !email || !first_name || !last_name || !designation || !department) {
-      return res.status(400).json({ message: 'All fields are required' });
-    }
-
-    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
-    if (existingUser) {
-      return res.status(409).json({ message: 'User already exists' });
-    }
-
-    const rawPassword = generatePassword();
-    const hashedPassword = await bcrypt.hash(rawPassword, 10);
-
-    const newUser = new User({
-      user_id,
-      email,
-      password_hash: hashedPassword,
-      first_name,
-      last_name,
-      department,
-      program: '',
-      role: 'PGC'
-    });
-
-    const savedUser = await newUser.save();
-
-    const FacultyModel = require('../models/faculty');
-    const pgcAsFaculty = new FacultyModel({
-      user_id: savedUser._id,
-      employee_id: user_id,
-      designation,
-      department_id: null 
-    });
-    await pgcAsFaculty.save();
-
-    await sendEmail({
-      email,
-      subject: 'Your PGC Account Credentials',
-      message: `Dear ${first_name},
-
-Your PGC committee account has been created.
-
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-    });
-
-    res.status(201).json({
-      message: 'PGC member created successfully',
-      credentials: {
-        email,
-        password: rawPassword
-      }
-    });
-  } catch (error) {
-    console.error('Create PGC error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -810,43 +822,163 @@ const assignCourseManually = async (req, res) => {
   try {
     const { student_id, course_id } = req.body;
 
-    const student = await Student.findById(student_id).populate("user_id");
-    const course = await Course.findById(course_id);
+    // Student lookup (ObjectId or student_number)
+    let student;
+    try {
+      student = await Student.findById(student_id).populate("user_id");
+    } catch {
+      student = null;
+    }
+    if (!student) {
+      student = await Student.findOne({ student_number: student_id }).populate("user_id");
+    }
+
+    // Course lookup (ObjectId or course_code)
+    let course;
+    try {
+      course = await Course.findById(course_id);
+    } catch {
+      course = null;
+    }
+    if (!course) {
+      course = await Course.findOne({ course_code: course_id });
+    }
 
     if (!student || !course) {
       return res.status(404).json({ message: "Student or course not found" });
     }
 
+    // Department check
     if (student.user_id && course.department && student.user_id.department !== course.department) {
-      console.warn(`⚠️ Student ${student._id} department mismatch with course ${course._id}`);
+      return res.status(400).json({ message: "Course department does not match student's department" });
     }
-
-    const semester = getSemesterFromCourseCode(course.course_code);
-    const academic_year = String(student.admission_year); 
 
     try {
       const assignment = await StudentCourse.create({
         student_id: student._id,
         course_id: course._id,
-        semester: String(semester),
-        academic_year
       });
-      console.log(`✅ Assigned course ${course._id} to student ${student._id}`);
       return res.status(201).json(assignment);
 
     } catch (err) {
       if (err.code === 11000) {
-        console.log(`⚠️ Duplicate assignment: ${student._id} already has ${course._id}`);
         return res.status(400).json({ message: "Course already assigned to this student" });
       } else {
-        console.error("❌ Insert error:", err);
         return res.status(500).json({ message: err.message });
       }
     }
 
   } catch (err) {
-    console.error("❌ Manual assign error:", err);
     return res.status(500).json({ message: err.message });
+  }
+};
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+const searchStudents = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Search query is required" });
+
+    const regex = new RegExp("^" + escapeRegex(query), "i");
+
+    const students = await Student.find({
+      user_id: { $ne: null },
+      $or: [{ student_number: { $regex: regex } }]
+    }).populate("user_id", "email department");
+
+    const formattedStudents = students.map(s => ({
+      _id: s._id,
+      student_number: s.student_number,
+      email: s.user_id?.email || "Unknown",
+    }));
+
+    res.status(200).json(formattedStudents);
+  } catch (err) {
+    console.error("❌ Student search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const searchCourses = async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) return res.status(400).json({ message: "Search query is required" });
+
+    const regex = new RegExp("^" + escapeRegex(query), "i");
+
+    const courses = await Course.find({
+      $or: [
+        { course_code: { $regex: regex } },
+        { course_name: { $regex: regex } },
+      ]
+    });
+
+    res.status(200).json(courses);
+  } catch (err) {
+    console.error("❌ Course search error:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getAllCourses = async (req, res) => {
+  try {
+    const courses = await Course.find();
+    res.status(200).json({ courses });
+  } catch (error) {
+    res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+const editCGPA = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+    const { cgpa } = req.body;
+
+    if (typeof cgpa !== 'number' || cgpa < 0 || cgpa > 4) {
+      return res.status(400).json({ message: 'CGPA must be a number between 0 and 4' });
+    }
+
+    const student = await Student.findByIdAndUpdate(
+      student_id,
+      { cgpa },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({ message: 'CGPA updated successfully', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+const editObtainedCredits = async (req, res) => {
+  try {
+    const { student_id } = req.params;
+    const { obtained_credits } = req.body;
+
+    if (typeof obtained_credits !== 'number' || obtained_credits < 0) {
+      return res.status(400).json({ message: 'Obtained credits must be a non-negative number' });
+    }
+
+    const student = await Student.findByIdAndUpdate(
+      student_id,
+      { obtained_credits },
+      { new: true }
+    );
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({ message: 'Obtained credits updated successfully', student });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
@@ -865,5 +997,10 @@ module.exports = {
   pushCoursesFromCSV,
   autoAssignCourses,
   assignCourseManually,
-  updateProfile
+  updateProfile,
+  getAllCourses,
+  searchStudents,
+  searchCourses,
+  editCGPA,
+  editObtainedCredits
 };

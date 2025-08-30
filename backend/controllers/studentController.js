@@ -1,22 +1,20 @@
+// controllers/studentController.js
 const User = require('../models/user');
 const Student = require('../models/student');
 const StudentCourse = require('../models/studentCourse');
-const SupervisorAssignment = require('../models/supervisorAssignment');
-const Course = require('../models/course');
 const ThesisProposal = require('../models/thesisProposal');
+const SupervisorAssignment = require('../models/supervisorAssignment');
+const { computeUnlockedStages } = require('../services/progressService');
 
 const getStudentProfile = async (req, res) => {
   try {
-    // req.user._id is the User _id from JWT
     const user = await User.findById(req.user._id);
     if (!user || user.role !== 'Student') {
       return res.status(404).json({ message: 'Student not found' });
     }
 
     const student = await Student.findOne({ user_id: user._id });
-    if (!student) {
-      return res.status(404).json({ message: 'Student details not found' });
-    }
+    if (!student) return res.status(404).json({ message: 'Student details not found' });
 
     res.json({
       fullName: `${user.first_name} ${user.last_name}`,
@@ -36,33 +34,13 @@ const getStudentProgress = async (req, res) => {
     const student = await Student.findOne({ user_id: req.user._id });
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    // Get credits
-    const courses = await StudentCourse.find({ student_id: student._id });
-    const totalCredits = courses.reduce((sum, c) => sum + (c.obtained_credit || 0), 0);
-
-    // Get supervisor assignment status
-    const assignment = await SupervisorAssignment.findOne({ student_id: student._id });
-
-    // Unlock logic
-    const creditsOk = totalCredits >= 9;
-    const cgpaOk = student.cgpa > 2.5;
-    const supervisorAssigned = assignment && assignment.status === 'Assigned';
-
-    // Determine progress steps
-    const progress = [
-      { step: 'Enrolled', unlocked: true },
-      { step: 'Supervisor Assignment', unlocked: creditsOk },
-      { step: 'Thesis Proposal Submission', unlocked: creditsOk && cgpaOk && supervisorAssigned },
-      { step: 'Thesis Submission', unlocked: creditsOk && cgpaOk && supervisorAssigned }, // add more conditions if needed
-      { step: 'Predefense', unlocked: creditsOk && cgpaOk && supervisorAssigned },       // add more conditions if needed
-      { step: 'Defense', unlocked: creditsOk && cgpaOk && supervisorAssigned }           // add more conditions if needed
-    ];
+    const progress = await computeUnlockedStages(student);
 
     res.json({
-      progress,
-      totalCredits,
+      studentId: student._id,
       cgpa: student.cgpa,
-      supervisorAssignmentStatus: assignment?.status || 'Not started'
+      totalCredits: student.total_credit_hours,
+      progress
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -71,40 +49,32 @@ const getStudentProgress = async (req, res) => {
 
 const getStudentCourses = async (req, res) => {
   try {
-    // Step 1: Find student linked to logged-in user
     const student = await Student.findOne({ user_id: req.user._id })
       .populate('program_id')
       .exec();
 
-    if (!student) {
-      return res.status(404).json({ error: 'Student not found' });
-    }
+    if (!student) return res.status(404).json({ error: 'Student not found' });
 
-    // Step 2: Find all StudentCourse docs for this student
     const enrolledCourses = await StudentCourse.find({ student_id: student._id })
-      .populate('course_id') // pull full course details
+      .populate('course_id')
       .exec();
 
     if (!enrolledCourses.length) {
       return res.status(404).json({ message: 'No courses found for this student' });
     }
 
-    // Step 3: Build final response
     const courseList = enrolledCourses.map(sc => ({
       _id: sc.course_id._id,
       course_code: sc.course_id.course_code,
       course_name: sc.course_id.course_name,
       credit: sc.course_id.credit,
       status: sc.course_id.status,
-
-      // student-specific details
       semester: sc.semester,
       academic_year: sc.academic_year,
       grade: sc.grade || null,
       obtained_credit: sc.obtained_credit || 0
     }));
 
-    // Step 4: Calculate total earned credits
     const totalEarnedCredits = enrolledCourses.reduce(
       (sum, c) => sum + (c.obtained_credit || 0),
       0
@@ -143,57 +113,147 @@ const getStudentById = async (req, res) => {
 
 const submitThesisProposal = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user._id });
-    if (!student) return res.status(404).json({ error: 'Student not found' });
+    console.log("Logged-in user:", req.user); // check token info
+    console.log("Form body:", req.body);      // debug form fields
+    console.log("File:", req.file);           // debug uploaded file
 
-    // Check eligibility (optional, for extra safety)
-    if (student.cgpa <= 2.5 || student.total_credit_hours < 9) {
-      return res.status(403).json({ error: 'Not eligible for thesis proposal submission.' });
+    // 1️⃣ Fetch student
+    const student = await Student.findOne({ user_id: req.user?.id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
     }
 
-    const {
-      supervisor_id,
-      title,
-      background,
-      objective,
-      methodology,
-      estimated_cost,
-      timeline,
-      references
-    } = req.body;
-
-    if (!supervisor_id || !title || !background || !objective || !methodology) {
-      return res.status(400).json({ error: 'Required fields are missing' });
+    // 2️⃣ Eligibility check
+    if ((student.cgpa ?? 0) <= 2.5 || (student.obtained_credits ?? 0) < 9) {
+      return res.status(403).json({ message: "Not eligible: insufficient CGPA or credits." });
+    }
+    if (!student.supervisor_id) {
+      return res.status(403).json({ message: "Not eligible: no supervisor assigned." });
     }
 
-    const attachment = req.file ? req.file.path : null;
+    // 3️⃣ Check if already submitted
+    const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
+    if (existingProposal) {
+      return res.status(400).json({ message: "Thesis proposal already submitted." });
+    }
 
+    // 4️⃣ Validate required fields
+    const requiredFields = ["research_topic", "title", "background", "objective", "methodology"];
+    for (let field of requiredFields) {
+      if (!req.body[field]) {
+        return res.status(400).json({ message: `Missing required field: ${field}` });
+      }
+    }
+
+    // 5️⃣ Save proposal
     const proposal = new ThesisProposal({
       student_id: student._id,
-      supervisor_id,
-      title,
-      background,
-      objective,
-      methodology,
-      estimated_cost,
-      timeline,
-      references,
-      attachment
+      supervisor_id: student.supervisor_id,
+      research_topic: req.body.research_topic,
+      title: req.body.title,
+      background: req.body.background,
+      objective: req.body.objective,
+      methodology: req.body.methodology,
+      estimated_cost: req.body.estimated_cost || "",
+      timeline: req.body.timeline || "",
+      references: req.body.references || "",
+      attachment: req.file?.path || null,
+      submittedAt: new Date(),
     });
 
     await proposal.save();
 
-    res.status(201).json({ message: 'Thesis proposal submitted', proposal });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(200).json({ message: "✅ Thesis proposal submitted successfully!" });
+
+  } catch (err) {
+    console.error("Error in submitThesisProposal:", err);
+
+    // 6️⃣ Catch any unexpected error safely
+    return res.status(500).json({ message: "Server error. Please try again later." });
   }
 };
+
+const getResult = async (req, res) => {
+  try {
+    // req.user._id should come from JWT middleware
+    const student = await Student.findOne({ user_id: req.user._id });
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({
+      cgpa: student.cgpa.toFixed(2),   // format nicely
+      current_semester: student.current_semester,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const checkSupervisorEligibility = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user.id });
+    if (!student) {
+      return res.status(404).json({ isEligible: false, message: 'Student not found' });
+    }
+    const isEligible = student.obtained_credits >= 9;
+    res.status(200).json({
+      isEligible,
+      message: isEligible
+        ? 'Eligible for supervisor assignment.'
+        : 'Not eligible for supervisor assignment (need ≥ 9 credits).',
+    });
+  } catch (err) {
+    res.status(500).json({ isEligible: false, message: 'Server error' });
+  }
+};
+
+const checkAssignmentStatus = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    const assignment = await SupervisorAssignment.findOne({ student_id: student._id })
+      .populate({
+        path: "student_id",
+        populate: [
+          { path: "user_id", select: "first_name last_name email department" },
+          { path: "program_id", select: "degree_type program_name" }
+        ]
+      })
+      .populate({
+        path: "priority_list.faculty_id",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      })
+      .populate({
+        path: "accepted_faculty",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      });
+
+    if (!assignment) {
+      return res.status(404).json({ message: "No supervisor assignment found for this student." });
+    }
+
+    res.json({ assignment });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 module.exports = {
   getStudentProfile,
   getStudentProgress,
   getStudentCourses,
   getStudentById,
-  submitThesisProposal
+  submitThesisProposal,
+  getResult,
+  checkSupervisorEligibility,
+  checkAssignmentStatus,
 };
-
