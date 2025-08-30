@@ -7,9 +7,9 @@ const userRoutes = require("./routes/userRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const cors = require("cors");
-const notificationRoutes = require('./routes/notificationRoutes');
-const facultySupervisorAssignmentRoutes = require('./routes/facultySupervisorAssignmentRoutes');
-const createHardcodedAdmin = require('./utils/createAdminUser');
+const notificationRoutes = require("./routes/notificationRoutes");
+const supervisorAssignmentRoutes = require("./routes/supervisorAssignmentRoutes");
+const createHardcodedAdmin = require("./utils/createAdminUser");
 
 dotenv.config();
 const app = express();
@@ -24,7 +24,7 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
     console.log("✅ MongoDB connected successfully");
-    await createHardcodedAdmin(); 
+    await createHardcodedAdmin();
     app.listen(process.env.PORT || 8080, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
     });
@@ -35,9 +35,12 @@ app.get("/", (req, res) => {
   res.send("🚀 Server is running");
 });
 
-app.use('/api/admin', adminRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/faculty/supervisor-assignment', facultySupervisorAssignmentRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/students", studentRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use(
+  "/api/faculty/supervisor-assignment",
+  facultySupervisorAssignmentRoutes
+);
