@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const thesisProposalSchema = new mongoose.Schema({
   student_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
   supervisor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', required: true },
+  research_topic: { type: String, required: true},
   title: { type: String, required: true },
   background: { type: String, required: true },
   objective: { type: String, required: true },
@@ -11,7 +12,11 @@ const thesisProposalSchema = new mongoose.Schema({
   timeline: { type: String },
   references: { type: String },
   attachment: { type: String }, // file path or URL to PDF
-  status: { type: String, enum: ['Submitted', 'Under Review', 'Approved', 'RevisionRequested', 'Rejected'], default: 'Submitted' },
+  status: {
+    type: String,
+    enum: ['Submitted', 'Under Review', 'Approved', 'RevisionRequested', 'Rejected'],
+    default: 'Submitted'
+  },
   feedback: { type: String }
 }, { timestamps: true });
 

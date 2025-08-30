@@ -41,7 +41,7 @@ const createAssignmentRequest = async (req, res) => {
     if (!student) return res.status(404).json({ message: 'Student not found' });
 
     // ✅ Eligibility check
-    if (student.obtained_credit < 9) {
+    if (student.obtained_credits < 9) {
       return res.status(403).json({
         message: 'You are not eligible to request a supervisor (requires ≥9 credits).',
       });
@@ -69,7 +69,6 @@ const createAssignmentRequest = async (req, res) => {
 
     await assignment.save();
 
-    // Notify first supervisor
     sendNotification(priorityFacultyIds[0], 'You have a new supervision request.');
 
     res.status(201).json({ message: 'Supervisor assignment request created.', assignment });
@@ -79,7 +78,6 @@ const createAssignmentRequest = async (req, res) => {
   }
 };
 
-// ✅ Fetch Available Supervisors
 const getAvailableSupervisors = async (req, res) => {
   try {
     const availableSupervisors = await Faculty.find({

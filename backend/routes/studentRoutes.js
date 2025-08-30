@@ -6,9 +6,13 @@ const {
   submitThesisProposal,
   getStudentProgress,
   getStudentCourses,
-  getStudentById
+  getStudentById,
+  getResult,
+  checkSupervisorEligibility,
+  checkAssignmentStatus
 } = require('../controllers/studentController');
-const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes'); 
+const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes');
+const thesisProposalEligibility = require('./thesisProgressRoutes'); 
 const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload');
 
@@ -25,9 +29,12 @@ router.post('/', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+router.get('/result', protect, getResult);
 
 router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
-router.post('/submit', protect, upload.single('attachment'), submitThesisProposal);
+router.post('/submit/check', protect, upload.single('attachment'), submitThesisProposal);
+router.get('/supervisor-assignment/check-eligibility', protect, checkSupervisorEligibility);
+router.get('/assignment/check-status', protect, checkAssignmentStatus);
 
 module.exports = router;

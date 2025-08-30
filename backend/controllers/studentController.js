@@ -3,6 +3,7 @@ const User = require('../models/user');
 const Student = require('../models/student');
 const StudentCourse = require('../models/studentCourse');
 const ThesisProposal = require('../models/thesisProposal');
+const SupervisorAssignment = require('../models/supervisorAssignment');
 const { computeUnlockedStages } = require('../services/progressService');
 
 const getStudentProfile = async (req, res) => {
@@ -112,57 +113,147 @@ const getStudentById = async (req, res) => {
 
 const submitThesisProposal = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user._id });
-    if (!student) return res.status(404).json({ error: 'Student not found' });
+    console.log("Logged-in user:", req.user); // check token info
+    console.log("Form body:", req.body);      // debug form fields
+    console.log("File:", req.file);           // debug uploaded file
 
-    const progress = await computeUnlockedStages(student);
-    const proposalStep = progress.find(p => p.step === 'Thesis Proposal');
-
-    if (!proposalStep.unlocked) {
-      return res.status(403).json({ error: 'Not eligible to submit thesis proposal' });
+    // 1️⃣ Fetch student
+    const student = await Student.findOne({ user_id: req.user?.id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
     }
 
-    const {
-      supervisor_id,
-      title,
-      background,
-      objective,
-      methodology,
-      estimated_cost,
-      timeline,
-      references
-    } = req.body;
-
-    if (!supervisor_id || !title || !background || !objective || !methodology) {
-      return res.status(400).json({ error: 'Required fields are missing' });
+    // 2️⃣ Eligibility check
+    if ((student.cgpa ?? 0) <= 2.5 || (student.obtained_credits ?? 0) < 9) {
+      return res.status(403).json({ message: "Not eligible: insufficient CGPA or credits." });
+    }
+    if (!student.supervisor_id) {
+      return res.status(403).json({ message: "Not eligible: no supervisor assigned." });
     }
 
-    const attachment = req.file ? req.file.path : null;
+    // 3️⃣ Check if already submitted
+    const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
+    if (existingProposal) {
+      return res.status(400).json({ message: "Thesis proposal already submitted." });
+    }
 
+    // 4️⃣ Validate required fields
+    const requiredFields = ["research_topic", "title", "background", "objective", "methodology"];
+    for (let field of requiredFields) {
+      if (!req.body[field]) {
+        return res.status(400).json({ message: `Missing required field: ${field}` });
+      }
+    }
+
+    // 5️⃣ Save proposal
     const proposal = new ThesisProposal({
       student_id: student._id,
-      supervisor_id,
-      title,
-      background,
-      objective,
-      methodology,
-      estimated_cost,
-      timeline,
-      references,
-      attachment
+      supervisor_id: student.supervisor_id,
+      research_topic: req.body.research_topic,
+      title: req.body.title,
+      background: req.body.background,
+      objective: req.body.objective,
+      methodology: req.body.methodology,
+      estimated_cost: req.body.estimated_cost || "",
+      timeline: req.body.timeline || "",
+      references: req.body.references || "",
+      attachment: req.file?.path || null,
+      submittedAt: new Date(),
     });
 
     await proposal.save();
-    res.status(201).json({ message: 'Thesis proposal submitted', proposal });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+
+    return res.status(200).json({ message: "✅ Thesis proposal submitted successfully!" });
+
+  } catch (err) {
+    console.error("Error in submitThesisProposal:", err);
+
+    // 6️⃣ Catch any unexpected error safely
+    return res.status(500).json({ message: "Server error. Please try again later." });
   }
 };
+
+const getResult = async (req, res) => {
+  try {
+    // req.user._id should come from JWT middleware
+    const student = await Student.findOne({ user_id: req.user._id });
+
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    res.json({
+      cgpa: student.cgpa.toFixed(2),   // format nicely
+      current_semester: student.current_semester,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const checkSupervisorEligibility = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user.id });
+    if (!student) {
+      return res.status(404).json({ isEligible: false, message: 'Student not found' });
+    }
+    const isEligible = student.obtained_credits >= 9;
+    res.status(200).json({
+      isEligible,
+      message: isEligible
+        ? 'Eligible for supervisor assignment.'
+        : 'Not eligible for supervisor assignment (need ≥ 9 credits).',
+    });
+  } catch (err) {
+    res.status(500).json({ isEligible: false, message: 'Server error' });
+  }
+};
+
+const checkAssignmentStatus = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    const assignment = await SupervisorAssignment.findOne({ student_id: student._id })
+      .populate({
+        path: "student_id",
+        populate: [
+          { path: "user_id", select: "first_name last_name email department" },
+          { path: "program_id", select: "degree_type program_name" }
+        ]
+      })
+      .populate({
+        path: "priority_list.faculty_id",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      })
+      .populate({
+        path: "accepted_faculty",
+        populate: { path: "user_id", select: "first_name last_name email department" },
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity"
+      });
+
+    if (!assignment) {
+      return res.status(404).json({ message: "No supervisor assignment found for this student." });
+    }
+
+    res.json({ assignment });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
 module.exports = {
   getStudentProfile,
   getStudentProgress,
   getStudentCourses,
   getStudentById,
-  submitThesisProposal
+  submitThesisProposal,
+  getResult,
+  checkSupervisorEligibility,
+  checkAssignmentStatus,
 };
