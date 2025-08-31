@@ -86,16 +86,25 @@ const getSupervisionQuota = async (req, res) => {
 
 const getProposalsFromSupervisedStudents = async (req, res) => {
   try {
+    // Find the Faculty document linked to this logged-in user
     const faculty = await Faculty.findOne({ user_id: req.user._id });
-    if (!faculty) return res.status(404).json({ message: 'Faculty not found' });
+    if (!faculty) return res.status(404).json({ message: "Faculty not found" });
 
+    // Now query proposals using the faculty _id
     const proposals = await ThesisProposal.find({ supervisor_id: faculty._id })
-      .populate('student_id')
-      .lean();
+      .populate({
+        path: 'student_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
+      })
+      .populate({
+        path: 'supervisor_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
+      });
 
-    res.json({ proposals });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json(proposals);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching proposals' });
   }
 };
 
@@ -182,7 +191,6 @@ const supervisorRespond = async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 };
-
 
 const getAcceptedSupervisionStudents = async (req, res) => {
   try {
