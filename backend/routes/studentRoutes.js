@@ -31,8 +31,6 @@ router.post('/', async (req, res) => {
   }
 });
 router.get('/result', protect, getResult);
-
-router.get('/:id', getStudentById);
 router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 router.post('/submit/check', protect, upload.single('attachment'), submitThesisProposal);
 router.get('/supervisor-assignment/check-eligibility', protect, checkSupervisorEligibility);
@@ -40,6 +38,7 @@ router.get('/assignment/check-status', protect, checkAssignmentStatus);
 router.get('/my-proposal', protect, getMyProposal);
 router.get('/proposal-pdf/:proposalId', protect, downloadProposalPDF);
 router.get('/progress', protect, getStudentProgress);
+router.get('/:id', getStudentById);
 
 
 module.exports = router;
