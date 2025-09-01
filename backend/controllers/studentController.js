@@ -4,7 +4,9 @@ const Student = require('../models/student');
 const StudentCourse = require('../models/studentCourse');
 const ThesisProposal = require('../models/thesisProposal');
 const SupervisorAssignment = require('../models/supervisorAssignment');
+const ThesisProgress = require('../models/thesisProgress');
 const { computeUnlockedStages } = require('../services/progressService');
+const { getThesisProgress } = require('./thesisProgressController');
 
 const getStudentProfile = async (req, res) => {
   try {
@@ -31,19 +33,57 @@ const getStudentProfile = async (req, res) => {
 
 const getStudentProgress = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user._id });
-    if (!student) return res.status(404).json({ error: 'Student not found' });
+    const student = await Student.findOne({ user_id: req.user._id })
+      .populate('supervisor_id');
+      
+    if (!student) {
+      return res.status(404).json({ message: 'Student profile not found' });
+    }
 
-    const progress = await computeUnlockedStages(student);
+    // Check eligibility (you may need to adjust this based on your requirements)
+    const isEligible = student.cgpa >= 3.0 && student.credits >= 90 && student.supervisor_id;
+    
+    // Get current proposal if any
+    const currentProposal = await ThesisProposal.findOne({ student_id: student._id });
+
+    // Get progress
+    const progress = await ThesisProgress.findOne({ student: student._id });
+
+    const studentInfo = {
+      cgpa: student.cgpa,
+      credits: student.credits,
+      hasSupervisor: !!student.supervisor_id,
+      supervisorName: student.supervisor_id 
+        ? `${student.supervisor_id.user_id?.first_name} ${student.supervisor_id.user_id?.last_name}`
+        : null
+    };
+
+    let message = '';
+    if (!isEligible) {
+      const reasons = [];
+      if (student.cgpa < 3.0) reasons.push('CGPA below 3.0');
+      if (student.credits < 90) reasons.push('Insufficient credits');
+      if (!student.supervisor_id) reasons.push('No supervisor assigned');
+      message = `Not eligible: ${reasons.join(', ')}`;
+    }
 
     res.json({
-      studentId: student._id,
-      cgpa: student.cgpa,
-      totalCredits: student.total_credit_hours,
-      progress
+      isEligible,
+      studentInfo,
+      message,
+      progress: progress ? {
+        current_stage: progress.current_stage,
+        unlocked_stages: progress.unlocked_stages
+      } : null,
+      proposal: currentProposal ? {
+        status: currentProposal.status,
+        hasProposal: true
+      } : { hasProposal: false }
     });
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching student progress:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
@@ -111,65 +151,211 @@ const getStudentById = async (req, res) => {
   }
 };
 
-const submitThesisProposal = async (req, res) => {
+const getMyProposal = async (req, res) => {
   try {
-    console.log("Logged-in user:", req.user); // check token info
-    console.log("Form body:", req.body);      // debug form fields
-    console.log("File:", req.file);           // debug uploaded file
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
 
-    // 1️⃣ Fetch student
-    const student = await Student.findOne({ user_id: req.user?.id });
+    // Find the student associated with this user
+    const student = await Student.findOne({ user_id: req.user._id });
     if (!student) {
-      return res.status(404).json({ message: "Student not found" });
+      return res.status(404).json({ message: 'Student profile not found' });
     }
 
-    // 2️⃣ Eligibility check
-    if ((student.cgpa ?? 0) <= 2.5 || (student.obtained_credits ?? 0) < 9) {
-      return res.status(403).json({ message: "Not eligible: insufficient CGPA or credits." });
-    }
-    if (!student.supervisor_id) {
-      return res.status(403).json({ message: "Not eligible: no supervisor assigned." });
+    // Find their thesis proposal
+    const proposal = await ThesisProposal.findOne({ student_id: student._id })
+      .populate({
+        path: 'supervisor_id',
+        populate: { path: 'user_id', select: 'first_name last_name' }
+      });
+
+    if (!proposal) {
+      return res.status(404).json({ message: 'No thesis proposal found' });
     }
 
-    // 3️⃣ Check if already submitted
-    const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
-    if (existingProposal) {
-      return res.status(400).json({ message: "Thesis proposal already submitted." });
+    res.json({ proposal });
+  } catch (error) {
+    console.error('Error fetching student proposal:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const downloadProposalPDF = async (req, res) => {
+  try {
+    const { proposalId } = req.params;
+
+    // Find the student associated with this user
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) {
+      return res.status(404).json({ message: 'Student profile not found' });
     }
 
-    // 4️⃣ Validate required fields
-    const requiredFields = ["research_topic", "title", "background", "objective", "methodology"];
-    for (let field of requiredFields) {
-      if (!req.body[field]) {
-        return res.status(400).json({ message: `Missing required field: ${field}` });
-      }
-    }
-
-    // 5️⃣ Save proposal
-    const proposal = new ThesisProposal({
-      student_id: student._id,
-      supervisor_id: student.supervisor_id,
-      research_topic: req.body.research_topic,
-      title: req.body.title,
-      background: req.body.background,
-      objective: req.body.objective,
-      methodology: req.body.methodology,
-      estimated_cost: req.body.estimated_cost || "",
-      timeline: req.body.timeline || "",
-      references: req.body.references || "",
-      attachment: req.file?.path || null,
-      submittedAt: new Date(),
+    // Find the proposal and verify ownership
+    const proposal = await ThesisProposal.findOne({ 
+      _id: proposalId,
+      student_id: student._id 
     });
 
-    await proposal.save();
+    if (!proposal) {
+      return res.status(404).json({ message: 'Proposal not found or unauthorized' });
+    }
 
-    return res.status(200).json({ message: "✅ Thesis proposal submitted successfully!" });
+    if (!proposal.attachment) {
+      return res.status(404).json({ message: 'No PDF attachment found' });
+    }
 
-  } catch (err) {
-    console.error("Error in submitThesisProposal:", err);
+    // Construct the file path
+    const filePath = path.join(process.cwd(), 'uploads', proposal.attachment);
 
-    // 6️⃣ Catch any unexpected error safely
-    return res.status(500).json({ message: "Server error. Please try again later." });
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'PDF file not found on server' });
+    }
+
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="thesis-proposal-${proposalId}.pdf"`);
+
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', (error) => {
+      console.error('Error streaming file:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Error downloading file' });
+      }
+    });
+
+  } catch (error) {
+    console.error('Error downloading proposal PDF:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+};
+
+const submitThesisProposal = async (req, res) => {
+  try {
+    const {
+      research_topic,
+      title,
+      background,
+      objective,
+      methodology,
+      estimated_cost,
+      timeline,
+      references,
+    } = req.body;
+
+    // Get student data
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) {
+      return res.status(404).json({ message: "Student profile not found" });
+    }
+
+    // Check if student has a supervisor
+    if (!student.supervisor_id) {
+      return res.status(400).json({ message: "You must have a supervisor assigned before submitting a proposal" });
+    }
+
+    // Check for existing proposal
+    const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
+
+    // If proposal exists and is not rejected/revision requested, don't allow resubmission
+    if (existingProposal && 
+        !['Rejected', 'RevisionRequested'].includes(existingProposal.status)) {
+      return res.status(400).json({ 
+        message: "You already have a proposal submitted. You can only resubmit if it was rejected or revision was requested." 
+      });
+    }
+
+    // Handle file upload
+    let attachmentPath = null;
+    if (req.file) {
+      attachmentPath = req.file.filename;
+    }
+
+    if (existingProposal && ['Rejected', 'RevisionRequested'].includes(existingProposal.status)) {
+      // Update existing proposal for resubmission
+      existingProposal.research_topic = research_topic;
+      existingProposal.title = title;
+      existingProposal.background = background;
+      existingProposal.objective = objective;
+      existingProposal.methodology = methodology;
+      existingProposal.estimated_cost = estimated_cost || '';
+      existingProposal.timeline = timeline || '';
+      existingProposal.references = references || '';
+      existingProposal.status = 'Submitted';
+      existingProposal.feedback = ''; // Clear previous feedback
+      
+      // Update attachment if new file uploaded
+      if (attachmentPath) {
+        // Delete old file if it exists
+        if (existingProposal.attachment) {
+          const oldFilePath = path.join(process.cwd(), 'uploads', existingProposal.attachment);
+          if (fs.existsSync(oldFilePath)) {
+            fs.unlinkSync(oldFilePath);
+          }
+        }
+        existingProposal.attachment = attachmentPath;
+      }
+
+      await existingProposal.save();
+
+      return res.status(200).json({
+        message: "Thesis proposal resubmitted successfully",
+        proposal: existingProposal,
+      });
+    } else {
+      // Create new proposal
+      const newProposal = new ThesisProposal({
+        student_id: student._id,
+        supervisor_id: student.supervisor_id,
+        research_topic,
+        title,
+        background,
+        objective,
+        methodology,
+        estimated_cost: estimated_cost || '',
+        timeline: timeline || '',
+        references: references || '',
+        attachment: attachmentPath,
+        status: 'Submitted',
+      });
+
+      await newProposal.save();
+
+      // Update thesis progress
+      let progress = await ThesisProgress.findOne({ student: student._id });
+      if (!progress) {
+        progress = new ThesisProgress({
+          student: student._id,
+          current_stage: 'Proposal',
+          unlocked_stages: ['Enrolled', 'Supervisor Assignment', 'Proposal'],
+        });
+      }
+
+      // Ensure Proposal stage is unlocked
+      if (!progress.unlocked_stages.includes('Proposal')) {
+        progress.unlocked_stages.push('Proposal');
+      }
+      progress.current_stage = 'Proposal';
+
+      await progress.save();
+
+      return res.status(201).json({
+        message: "Thesis proposal submitted successfully",
+        proposal: newProposal,
+      });
+    }
+
+  } catch (error) {
+    console.error("Error submitting thesis proposal:", error);
+    res.status(500).json({ 
+      message: "Server error", 
+      error: error.message 
+    });
   }
 };
 
@@ -183,7 +369,8 @@ const getResult = async (req, res) => {
     }
 
     res.json({
-      cgpa: student.cgpa.toFixed(2),   // format nicely
+      cgpa: student.cgpa.toFixed(2),
+      obtained_credits: student.obtained_credits.toFixed(2),   
       current_semester: student.current_semester,
     });
   } catch (err) {
@@ -194,7 +381,7 @@ const getResult = async (req, res) => {
 
 const checkSupervisorEligibility = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user.id });
+    const student = await Student.findOne({ user_id: req.user._id });
     if (!student) {
       return res.status(404).json({ isEligible: false, message: 'Student not found' });
     }
@@ -256,4 +443,7 @@ module.exports = {
   getResult,
   checkSupervisorEligibility,
   checkAssignmentStatus,
+  getThesisProgress,
+  getMyProposal,
+  downloadProposalPDF
 };

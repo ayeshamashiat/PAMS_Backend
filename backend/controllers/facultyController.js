@@ -1,5 +1,6 @@
 const Student = require('../models/student');
 const ThesisProposal = require('../models/thesisProposal');
+const ThesisProgress = require('../models/thesisProgress');
 const SupervisorAssignment = require('../models/supervisorAssignment');
 const Faculty = require('../models/faculty');
 const User = require('../models/user');
@@ -53,14 +54,21 @@ const getPendingSupervisorRequests = async (req, res) => {
     }
 
     const assignments = await SupervisorAssignment.find({
-      [`priority_list.${0}.faculty_id`]: faculty._id, 
-      [`priority_list.${0}.status`]: 'Requested'
+      $or: [
+        { 
+          priority_list: { 
+            $elemMatch: { faculty_id: faculty._id, status: "Requested" } 
+          }
+        }
+      ]
     })
-      .populate('student_id')
-      .lean();
+    .populate("student_id")
+    .lean();
 
+    // Double check only the current priority index is for this faculty
     const filtered = assignments.filter(a =>
-      a.priority_list[a.current_priority_index].faculty_id.toString() === faculty._id.toString()
+      a.priority_list[a.current_priority_index].faculty_id.toString() === faculty._id.toString() &&
+      a.priority_list[a.current_priority_index].status === "Requested"
     );
 
     return res.json({ requests: filtered });
@@ -86,100 +94,144 @@ const getSupervisionQuota = async (req, res) => {
 
 const getProposalsFromSupervisedStudents = async (req, res) => {
   try {
+    // Find the Faculty document linked to this logged-in user
     const faculty = await Faculty.findOne({ user_id: req.user._id });
-    if (!faculty) return res.status(404).json({ message: 'Faculty not found' });
+    if (!faculty) return res.status(404).json({ message: "Faculty not found" });
 
+    // Now query proposals using the faculty _id
     const proposals = await ThesisProposal.find({ supervisor_id: faculty._id })
-      .populate('student_id')
-      .lean();
+      .populate({
+        path: 'student_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
+      })
+      .populate({
+        path: 'supervisor_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
+      });
 
-    res.json({ proposals });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json(proposals);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching proposals' });
   }
 };
+
+const ALLOWED_STATUSES = ['Approved', 'Rejected'];
 
 const reviewThesisProposal = async (req, res) => {
   try {
-    const { proposalId, feedback, status } = req.body; // status: 'Approved', 'RevisionRequested', 'Rejected'
-    const proposal = await ThesisProposal.findById(proposalId);
+    const { proposalId, feedback = '', status } = req.body;
+
+    if (!proposalId || (!ALLOWED_STATUSES.includes(status) && status !== 'Comment')) {
+      return res.status(400).json({ message: 'Invalid payload.' });
+    }
+
+    const proposal = await ThesisProposal.findById(proposalId).populate('student_id');
     if (!proposal) return res.status(404).json({ message: 'Proposal not found.' });
 
-    proposal.feedback = feedback;
-    proposal.status = status;
+    // ✅ Get faculty corresponding to logged-in user
+    const faculty = await Faculty.findOne({ user_id: req.user._id });
+    if (!faculty) return res.status(403).json({ message: 'Faculty profile not found.' });
+
+    // ✅ Check supervisor
+    if (proposal.supervisor_id.toString() !== faculty._id.toString()) {
+      return res.status(403).json({ message: 'Not allowed. You are not the assigned supervisor.' });
+    }
+
+    // Save feedback into history
+    if (!proposal.feedbackHistory) proposal.feedbackHistory = [];
+    proposal.feedbackHistory.push({ feedback, status, date: new Date() });
+
+    // Update proposal status only if it's Approve/Reject
+    if (status !== 'Comment') {
+      proposal.status = status;
+      proposal.feedback = feedback; // latest feedback
+      await updateThesisProgressAfterDecision(proposal.student_id._id, status);
+    }
+
     await proposal.save();
 
-    // Optionally, notify student or PGC
-    // sendNotification(proposal.student_id, `Your thesis proposal was ${status}.`);
+    const refreshed = await ThesisProposal.findById(proposalId).populate('student_id');
+    res.json({ message: 'Proposal reviewed.', proposal: refreshed });
 
-    res.json({ message: 'Proposal reviewed.', proposal });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('reviewThesisProposal error:', error);
+    res.status(500).json({ message: 'Server error.', error: error.message });
   }
 };
 
+// ---- helper ----
+async function updateThesisProgressAfterDecision(studentId, status) {
+  // Find or create progress doc
+  let progress = await ThesisProgress.findOne({ student: studentId });
+  if (!progress) {
+    progress = new ThesisProgress({
+      student: studentId,
+      current_stage: 'Proposal',
+      unlocked_stages: ['Enrolled', 'Supervisor Assignment', 'Proposal'],
+    });
+  }
+
+  // Always keep Proposal stage unlocked once a proposal exists
+  ensure(progress.unlocked_stages, 'Proposal');
+
+  if (status === 'Approved') {
+    // Supervisor approval → unlock Thesis stage and advance
+    ensure(progress.unlocked_stages, 'Thesis');
+    progress.current_stage = 'Thesis';
+
+    // Optional: keep a human breadcrumb without schema change
+    ensure(progress.unlocked_stages, 'Supervisor Approved');
+  } else if (status === 'RevisionRequested') {
+    // Stay in Proposal; add breadcrumb
+    ensure(progress.unlocked_stages, 'Revision Requested');
+  } else if (status === 'Rejected') {
+    // Stay in Proposal; add breadcrumb
+    ensure(progress.unlocked_stages, 'Supervisor Rejected');
+  }
+
+  await progress.save();
+}
+
+function ensure(arr, val) {
+  if (!arr.includes(val)) arr.push(val);
+}
+
+
 const supervisorRespond = async (req, res) => {
   try {
-    const userId = req.user.id; // JWT stores User._id
-    const faculty = await Faculty.findOne({ user_id: userId });
-    if (!faculty) {
-      return res.status(403).json({ message: "Faculty record not found for this user." });
-    }
-    const facultyId = faculty._id;
-
-    const { assignmentId, response } = req.body; // "Accepted" | "Rejected"
+    const { assignmentId, response } = req.body; // "accept" | "reject"
 
     const assignment = await SupervisorAssignment.findById(assignmentId);
-    if (!assignment) {
-      return res.status(404).json({ message: "Assignment not found." });
-    }
+    if (!assignment) return res.status(404).json({ message: "Assignment not found" });
 
-    const idx = assignment.current_priority_index;
-    const current = assignment.priority_list[idx];
-
-    if (!current || String(current.faculty_id) !== String(facultyId)) {
-      return res.status(403).json({ message: "You are not authorized to respond to this request." });
-    }
-
-    if (current.status !== "Requested") {
-      return res.status(400).json({ message: "No pending request for you." });
-    }
+    const currentIndex = assignment.current_priority_index;
+    const current = assignment.priority_list[currentIndex];
 
     if (response === "Accepted") {
-      current.status = "SupervisorAccepted";   // ✅ set correctly
-      assignment.accepted_faculty = facultyId;
-      assignment.overall_status = "Pending";  // optional: mark assignment done
+      current.status = "SupervisorAccepted";
+      assignment.overall_status = "Pending";
+      assignment.accepted_faculty = current.faculty_id;
+    } 
+    else if (response === "Reject") {
+      current.status = "SupervisorRejected";
 
-      // Update student supervisor
-      await Student.findByIdAndUpdate(assignment.student_id, {
-        supervisor_id: facultyId,
-      });
-
-      // Increment faculty supervision count
-      await Faculty.findByIdAndUpdate(facultyId, {
-        $inc: { current_supervision_count: 1 },
-      });
-
-    } else if (response === "Rejected") {
-      current.status = "SupervisorRejected";   // ✅ set correctly
-      assignment.current_priority_index += 1;
-
-      // Move to next priority faculty if any
-      if (assignment.current_priority_index < assignment.priority_list.length) {
+      // move to next
+      if (currentIndex + 1 < assignment.priority_list.length) {
+        assignment.current_priority_index += 1;
         assignment.priority_list[assignment.current_priority_index].status = "Requested";
+        assignment.overall_status = "Pending";
       } else {
         assignment.overall_status = "Failed";
       }
-    } else {
-      return res.status(400).json({ message: "Invalid response. Must be 'Accepted' or 'Rejected'." });
     }
 
     await assignment.save();
-    return res.json({ message: "Response recorded.", assignment });
+    res.json(assignment);
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ message: "Error updating supervision request" });
   }
 };
 

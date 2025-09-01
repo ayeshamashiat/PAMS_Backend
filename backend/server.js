@@ -12,6 +12,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const facultyRoutes = require('./routes/facultyRoutes');
 const pgcRoutes = require('./routes/pgcRoutes');
 const bodyParser = require('body-parser');
+const path = require("path");
 
 
 dotenv.config();
@@ -45,3 +46,4 @@ app.use('/api/students', studentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/faculty', facultyRoutes);
 app.use('/api/pgc', pgcRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
