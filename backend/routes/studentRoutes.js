@@ -9,7 +9,9 @@ const {
   getStudentById,
   getResult,
   checkSupervisorEligibility,
-  checkAssignmentStatus
+  checkAssignmentStatus,
+  getMyProposal,
+  downloadProposalPDF,
 } = require('../controllers/studentController');
 const supervisorAssignmentRoutes = require('./supervisorAssignmentRoutes');
 const thesisProposalEligibility = require('./thesisProgressRoutes'); 
@@ -17,7 +19,6 @@ const { protect } = require('../middleware/authMiddleware');
 const upload = require('../middleware/upload');
 
 router.get('/profile', protect, getStudentProfile);
-router.get('/progress', protect, getStudentProgress);
 router.get('/courses', protect, getStudentCourses);
 
 router.post('/', async (req, res) => {
@@ -36,5 +37,9 @@ router.use('/supervisor-assignment', supervisorAssignmentRoutes);
 router.post('/submit/check', protect, upload.single('attachment'), submitThesisProposal);
 router.get('/supervisor-assignment/check-eligibility', protect, checkSupervisorEligibility);
 router.get('/assignment/check-status', protect, checkAssignmentStatus);
+router.get('/my-proposal', protect, getMyProposal);
+router.get('/proposal-pdf/:proposalId', protect, downloadProposalPDF);
+router.get('/progress', protect, getStudentProgress);
+
 
 module.exports = router;

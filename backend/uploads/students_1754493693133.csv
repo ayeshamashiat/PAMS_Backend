@@ -1,5 +1,0 @@
-student_number,email,first_name,last_name,program_id,department,admission_year
-2021-01-001,alice@example.com,Alice,Ahmed,CS101,Computer Science,2021
-2021-01-002,bob@example.com,Bob,Hossain,CS101,Computer Science,2021
-2021-01-003,carol@example.com,Carol,Khan,EEE202,Electrical Engineering,2022
-2021-01-004,dave@example.com,Dave,Chowdhury,MECH105,Mechanical Engineering,2023

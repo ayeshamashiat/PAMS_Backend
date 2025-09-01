@@ -487,7 +487,6 @@ const updateProfile = async (req, res) => {
   }
 };
 
-
 const getAllStudents = async (req, res) => {
   try {
     const studentsWithDetails = await User.aggregate([
