@@ -9,7 +9,6 @@ const studentSchema = new mongoose.Schema({
   cgpa: { type: Number, default: 0.0 },
   total_credit_hours: { type: Number, default: 0 }, // all attempted credits
   obtained_credits: { type: Number, default: 0 },   // ✅ completed credits
-  research_area: { type: String, default: null},
   supervisor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', default: null }, // Added this field
   status: {
     type: String,

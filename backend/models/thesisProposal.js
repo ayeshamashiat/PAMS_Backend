@@ -14,7 +14,7 @@ const thesisProposalSchema = new mongoose.Schema({
   attachment: { type: String },
   status: {
     type: String,
-    enum: ['Submitted', 'Under Review', 'Approved', 'RevisionRequested', 'Rejected'],
+    enum: ['Submitted', 'Under Review', 'Approved', 'RevisionRequested', 'Rejected', 'PGCApproved', 'PGCRejected'],
     default: 'Submitted'
   },
   feedback: { type: String }, // latest feedback
@@ -22,7 +22,8 @@ const thesisProposalSchema = new mongoose.Schema({
     {
       feedback: String,
       status: String,
-      date: { type: Date, default: Date.now }
+      date: { type: Date, default: Date.now },
+      reviewedBy: String // 'supervisor' or 'pgc'
     }
   ]
 }, { timestamps: true });

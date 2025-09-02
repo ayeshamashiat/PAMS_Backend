@@ -43,7 +43,7 @@ router.get("/search/students", searchStudents);
 router.get("/search/courses", searchCourses);
 router.patch('/faculty/:facultyId/max-supervision-cap', protect, setMaxSupervisionCap);
 router.patch('/profile', protect, updateProfile);
-router.put('/student/:student_id/edit-cgpa', editCGPA);
-router.put('/student/:student_id/edit-credits', editObtainedCredits);
+router.put('/student/:student_id/edit-cgpa', protect, editCGPA);
+router.put('/student/:student_id/edit-credits', protect, editObtainedCredits);
 
 module.exports = router;

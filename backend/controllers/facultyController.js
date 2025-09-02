@@ -200,29 +200,61 @@ function ensure(arr, val) {
 
 const supervisorRespond = async (req, res) => {
   try {
-    const { assignmentId, response } = req.body; // "accept" | "reject"
+    const { assignmentId, response } = req.body; // "Accepted" | "Rejected"
 
     const assignment = await SupervisorAssignment.findById(assignmentId);
-    if (!assignment) return res.status(404).json({ message: "Assignment not found" });
+    if (!assignment) {
+      return res.status(404).json({ message: "Assignment not found" });
+    }
 
     const currentIndex = assignment.current_priority_index;
     const current = assignment.priority_list[currentIndex];
 
     if (response === "Accepted") {
       current.status = "SupervisorAccepted";
-      assignment.overall_status = "Pending";
+      assignment.overall_status = "Pending"; // waits for PGC
       assignment.accepted_faculty = current.faculty_id;
+
+      // notify PGC or student
+      sendNotification(
+        assignment.student_id,
+        "Your supervisor request was accepted by faculty, waiting for PGC approval."
+      );
     } 
-    else if (response === "Reject") {
+    else if (response === "Rejected") {
       current.status = "SupervisorRejected";
 
-      // move to next
+      // If there’s another supervisor in the list
       if (currentIndex + 1 < assignment.priority_list.length) {
         assignment.current_priority_index += 1;
         assignment.priority_list[assignment.current_priority_index].status = "Requested";
         assignment.overall_status = "Pending";
+
+        // notify next faculty
+        sendNotification(
+          assignment.priority_list[assignment.current_priority_index].faculty_id,
+          "You have a new supervision request."
+        );
+
+        // notify student
+        sendNotification(
+          assignment.student_id,
+          "Your supervisor request was declined, moving to next priority."
+        );
       } else {
-        assignment.overall_status = "Failed";
+        // last one rejected → hand over to PGC
+        assignment.overall_status = "PGCReview";
+        assignment.accepted_faculty = null;
+
+        // notify student + PGC
+        sendNotification(
+          assignment.student_id,
+          "All your priority supervisors declined. Your case is under PGC review for manual assignment."
+        );
+        sendNotification(
+          "PGC_ROLE_OR_USERID", // depends how you identify PGC
+          "A student requires manual supervisor assignment."
+        );
       }
     }
 
@@ -234,7 +266,6 @@ const supervisorRespond = async (req, res) => {
     res.status(500).json({ message: "Error updating supervision request" });
   }
 };
-
 
 const getAcceptedSupervisionStudents = async (req, res) => {
   try {

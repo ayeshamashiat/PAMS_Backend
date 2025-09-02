@@ -31,7 +31,7 @@ const createStudent = async (req, res) => {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    const existingUser = await User.findOne({ $or: [{ email }, { user_id }] });
+    const existingUser = await User.findOne({ $or: [{ email }, { student_number }] });
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
@@ -54,9 +54,10 @@ const createStudent = async (req, res) => {
       user_id: savedUser._id,
       student_number: student_number,
       program_id: program_id,
+      supervisor_id: null,
       admission_year: admission_year,
       current_semester: 1,
-      supervisor_id: null
+      obtained_credits: 0
     });
 
     await student.save();
