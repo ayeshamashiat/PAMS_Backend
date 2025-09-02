@@ -11,7 +11,10 @@ const {
   getPGCAssignedSupervisors,
   getPGCProfile,
 } = require("../controllers/pgcController");
-
+const {
+  pgcList,
+  pgcReview,
+} = require("../controllers/thesisSubmissionController");
 // supervision
 router.post("/pgc-respond", protect, pgcRespond);
 router.post("/pgc-manual-assign", protect, pgcManualAssign);
@@ -25,5 +28,8 @@ router.get("/profile", protect, getPGCProfile);
 router.get("/thesis-proposals", protect, listPGCThesisProposals);
 // POST body: { proposalId, status: "Approved"|"Rejected"|"Comment", feedback? }
 router.post("/thesis-proposals/review", protect, pgcReviewProposal);
+
+router.get("/theses", protect, pgcList); // ?status=Approved or ?status=PGCApproved
+router.post("/theses/review", protect, pgcReview);
 
 module.exports = router;
