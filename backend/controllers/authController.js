@@ -1,12 +1,13 @@
-// No register function here at all
+  // No register function here at all
 
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const User = require('../models/user');
-const sendEmail = require('../utils/sendEmail');
+  const bcrypt = require('bcryptjs');
+  const jwt = require('jsonwebtoken');
+  const crypto = require('crypto');
+  const User = require('../models/user');
+  const sendEmail = require('../utils/sendEmail');
 
-// LOGIN
+  // LOGIN
+ // LOGIN
 const login = async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -21,11 +22,20 @@ const login = async (req, res) => {
     if (!isMatch)
       return res.status(400).json({ message: 'Invalid email or password' });
 
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: '1d' }
-    );
+    // ✅ Include full user info in token payload
+    const tokenPayload = {
+      id: user._id,
+      first_name: user.first_name,            // Assuming field exists
+      last_name: user.last_name,            // Assuming field exists
+      email: user.email,
+      role: user.role,
+      employeeId: user.employeeId,        // Assuming field exists
+      department: user.department,            // Assuming field exists
+    };
+
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, {
+      expiresIn: '1d',
+    });
 
     res.json({ token });
   } catch (err) {
@@ -34,65 +44,67 @@ const login = async (req, res) => {
   }
 };
 
-// FORGOT PASSWORD
-const forgotPassword = async (req, res) => {
-  const { email } = req.body;
-  try {
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: 'No user with that email' });
 
-    const resetToken = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '15m' }
-    );
+  // FORGOT PASSWORD
+  const forgotPassword = async (req, res) => {
+    const { email } = req.body;
+    try {
+      const user = await User.findOne({ email });
+      if (!user)
+        return res.status(404).json({ message: 'No user with that email' });
 
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-    const message = `Click the link to reset your password:\n${resetUrl}\n\nToken expires in 15 minutes.`;
+      // ✅ Generate JWT token with short expiry
+      const resetToken = jwt.sign(
+        { id: user._id },
+        process.env.JWT_SECRET,
+        { expiresIn: '15m' }
+      );
 
-    await sendEmail({
-      email: user.email,
-      subject: 'Password Reset Request',
-      message,
-    });
+      const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+      const message = `Click the link to reset your password:\n${resetUrl}\n\nToken expires in 15 minutes.`;
 
-    res.json({ message: 'Reset password email sent' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server error' });
-  }
-};
+      await sendEmail({
+        email: user.email,
+        subject: 'Password Reset Request',
+        message,
+      });
 
-
-// RESET PASSWORD
-const resetPassword = async (req, res) => {
-  const resetToken = req.params.token;
-
-  try {
-    const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid or expired token' });
+      res.json({ message: 'Reset password email sent' });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: 'Server error' });
     }
+  };
 
-    const newPasswordHash = await bcrypt.hash(req.body.password, 10);
-    user.password_hash = newPasswordHash;
-    await user.save();
 
-    res.json({ message: 'Password reset successful' });
-  } catch (err) {
-    console.error('Reset error:', err);
-    if (err.name === 'TokenExpiredError') {
-      return res.status(400).json({ message: 'Reset link expired' });
+  // RESET PASSWORD
+  const resetPassword = async (req, res) => {
+    const resetToken = req.params.token;
+
+    try {
+      const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.id);
+
+      if (!user) {
+        return res.status(400).json({ message: 'Invalid or expired token' });
+      }
+
+      const newPasswordHash = await bcrypt.hash(req.body.password, 10);
+      user.password_hash = newPasswordHash;
+      await user.save();
+
+      res.json({ message: 'Password reset successful' });
+    } catch (err) {
+      console.error('Reset error:', err);
+      if (err.name === 'TokenExpiredError') {
+        return res.status(400).json({ message: 'Reset link expired' });
+      }
+      res.status(400).json({ message: 'Invalid or expired token' });
     }
-    res.status(400).json({ message: 'Invalid or expired token' });
-  }
-};
+  };
 
-module.exports = {
-  login,
-  forgotPassword,
-  resetPassword,
-};
+  module.exports = {
+    login,
+    forgotPassword,
+    resetPassword,
+  };
