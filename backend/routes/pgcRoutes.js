@@ -1,25 +1,29 @@
 const express = require("express");
 const router = express.Router();
+const { protect } = require("../middleware/authMiddleware");
+
 const {
   pgcRespond,
   pgcManualAssign,
   pgcReviewProposal,
+  listPGCThesisProposals,
   getPGCSupervisionRequests,
   getPGCAssignedSupervisors,
   getPGCProfile,
-  getPendingProposals,
-  getApprovedProposals,
-
 } = require("../controllers/pgcController");
-const { protect } = require("../middleware/authMiddleware");
 
-router.post("/pgc-respond", pgcRespond);
-router.post("/pgc-manual-assign", pgcManualAssign);
-router.post("/pgc-review", pgcReviewProposal);
+// supervision
+router.post("/pgc-respond", protect, pgcRespond);
+router.post("/pgc-manual-assign", protect, pgcManualAssign);
 router.get("/supervision-requests", protect, getPGCSupervisionRequests);
 router.get("/assigned-supervisors", protect, getPGCAssignedSupervisors);
+
+// PGC user profile
 router.get("/profile", protect, getPGCProfile);
-router.get('/pending-proposals', getPendingProposals);
-router.get('/approved-proposals', getApprovedProposals); 
-router.post('/review-proposal', pgcReviewProposal);
+
+// ✅ Thesis proposals (PGC)
+router.get("/thesis-proposals", protect, listPGCThesisProposals);
+// POST body: { proposalId, status: "Approved"|"Rejected"|"Comment", feedback? }
+router.post("/thesis-proposals/review", protect, pgcReviewProposal);
+
 module.exports = router;
