@@ -78,65 +78,75 @@ const getThesisProgress = async (req, res) => {
 
 const checkProgressEligibility = async (req, res) => {
   try {
-    const student = await Student.findOne({ user_id: req.user._id });
+    const studentId = req.user.id;
+
+    // 1️⃣ Fetch student and populate supervisors
+    const student = await Student.findById(studentId).populate("supervisor_id");
     if (!student) {
-      return res.status(404).json({ message: "Student not found" });
+      return res.status(404).json({ eligible: false, reason: "Student not found.", progress: [] });
     }
 
-    // Check for supervisor - either fully assigned OR supervisor has accepted
-    let hasSupervisor = student.supervisor_id;
-    
+    // 2️⃣ Check supervisor assignment
+    let hasSupervisor = !!student.supervisor_id;
     if (!hasSupervisor) {
       const supervisorAssignment = await SupervisorAssignment.findOne({ student_id: student._id });
       if (supervisorAssignment) {
-        const hasAcceptedSupervisor = supervisorAssignment.priority_list.some(
-          p => p.status === 'PGCAccepted'
-        );
-        hasSupervisor = hasAcceptedSupervisor;
+        hasSupervisor = supervisorAssignment.priority_list.some(p => p.status === 'PGCAccepted');
       }
     }
 
+    // 3️⃣ Check CGPA and credits
+    const hasMinCGPA = Number(student.cgpa) > 2.5;
+    const hasMinCredits = Number(student.obtained_credits) >= 9;
 
-    // Eligibility checks
-    const hasMinCGPA = student.cgpa > 2.5;
-    const hasMinCredits = student.obtained_credits >= 9;
+    // 4️⃣ Determine eligibility
     const isEligible = hasMinCGPA && hasMinCredits && hasSupervisor;
-    
+
     let reason = "";
     if (!hasMinCredits) reason = "Need at least 9 credits.";
     else if (!hasMinCGPA) reason = "CGPA must be above 2.5.";
     else if (!hasSupervisor) reason = "No supervisor assigned yet.";
 
-    // Compute unlocked stages
+    // 5️⃣ Compute unlocked stages
     const unlockedStages = await computeUnlockedStages(student);
-    
-    // Rename stages for frontend consistency
-    const progress = unlockedStages.map((s) => ({
+    const progress = unlockedStages.map(s => ({
       step: stageLabels[s.step] || s.step,
       unlocked: s.unlocked,
     }));
 
-    // Get or create thesis progress record
+    // 6️⃣ Fetch or create thesis progress record
     let thesisProgress = await ThesisProgress.findOne({ student: student._id });
     if (!thesisProgress) {
       thesisProgress = await ThesisProgress.create({
         student: student._id,
         current_stage: "Enrolled",
-        unlocked_stages: progress.filter((s) => s.unlocked).map((s) => s.step),
+        unlocked_stages: progress.filter(s => s.unlocked).map(s => s.step),
+        feedbackHistory: [],
       });
     } else {
-      thesisProgress.unlocked_stages = progress.filter((s) => s.unlocked).map((s) => s.step);
-      await thesisProgress.save();
+      thesisProgress.unlocked_stages = progress.filter(s => s.unlocked).map(s => s.step);
     }
 
+    // 7️⃣ Optional: update current stage if eligible
+    if (isEligible && !thesisProgress.unlocked_stages.includes("Thesis Proposal")) {
+      thesisProgress.current_stage = "Proposal";
+      thesisProgress.unlocked_stages.push("Thesis Proposal");
+    }
+
+    await thesisProgress.save();
+
+    // 8️⃣ Return clean JSON
     res.status(200).json({
       eligible: isEligible,
       reason: isEligible ? "" : reason,
-      progress: progress,
+      progress,
+      currentStage: thesisProgress.current_stage,
+      feedbackHistory: thesisProgress.feedbackHistory,
     });
+
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Eligibility check error:", err);
+    res.status(500).json({ eligible: false, reason: "Server error.", progress: [] });
   }
 };
 

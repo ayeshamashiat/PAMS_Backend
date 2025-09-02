@@ -259,14 +259,24 @@ const submitThesisProposal = async (req, res) => {
       return res.status(400).json({ message: "You must have a supervisor assigned before submitting a proposal" });
     }
 
+    // Check eligibility for proposal submission
+    const isEligible = checkEligibility(student);
+    if (!isEligible) {
+      return res.status(400).json({ 
+        message: "You are not eligible to submit a thesis proposal. Please ensure you meet all requirements." 
+      });
+    }
+
     // Check for existing proposal
     const existingProposal = await ThesisProposal.findOne({ student_id: student._id });
 
-    // If proposal exists and is not rejected/revision requested, don't allow resubmission
-    if (existingProposal && 
-        !['Rejected', 'RevisionRequested'].includes(existingProposal.status)) {
+    // FIXED: Allow resubmission if eligible AND (no proposal exists OR proposal was rejected/revision requested OR proposal was rejected by PGC)
+    const canSubmit = !existingProposal || 
+                     ['Rejected', 'RevisionRequested', 'PGCRejected'].includes(existingProposal.status);
+
+    if (!canSubmit) {
       return res.status(400).json({ 
-        message: "You already have a proposal submitted. You can only resubmit if it was rejected or revision was requested." 
+        message: "You already have a proposal submitted or approved. You can only resubmit if it was rejected or revision was requested." 
       });
     }
 
@@ -276,7 +286,7 @@ const submitThesisProposal = async (req, res) => {
       attachmentPath = req.file.filename;
     }
 
-    if (existingProposal && ['Rejected', 'RevisionRequested'].includes(existingProposal.status)) {
+    if (existingProposal && ['Rejected', 'RevisionRequested', 'PGCRejected'].includes(existingProposal.status)) {
       // Update existing proposal for resubmission
       existingProposal.research_topic = research_topic;
       existingProposal.title = title;
@@ -288,6 +298,15 @@ const submitThesisProposal = async (req, res) => {
       existingProposal.references = references || '';
       existingProposal.status = 'Submitted';
       existingProposal.feedback = ''; // Clear previous feedback
+      
+      // Add to feedback history before clearing current feedback
+      if (existingProposal.feedback) {
+        existingProposal.feedbackHistory.push({
+          feedback: existingProposal.feedback,
+          status: existingProposal.status,
+          date: new Date()
+        });
+      }
       
       // Update attachment if new file uploaded
       if (attachmentPath) {
@@ -322,6 +341,7 @@ const submitThesisProposal = async (req, res) => {
         references: references || '',
         attachment: attachmentPath,
         status: 'Submitted',
+        feedbackHistory: [] // Initialize empty feedback history
       });
 
       await newProposal.save();
