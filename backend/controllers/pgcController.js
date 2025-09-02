@@ -100,6 +100,20 @@ const pgcReviewProposal = async (req, res) => {
   }
 };
 
+const pendingProposals = async (req, res) => {
+  try {
+    const proposals = await ThesisProposal.find({ status: { $in: ["Submitted", "Under Review"] } })
+      .populate("student_id", "student_number email")
+      .populate("supervisor_id", "first_name last_name department")
+      .lean();
+
+    res.json(proposals);
+
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+}
+
 const getSupervisorLoadReport = async (req, res) => {
   try {
     const faculties = await Faculty.find();
@@ -200,5 +214,6 @@ module.exports = {
     getStudentProgressReport,
     getSupervisorLoadReport,
     getPGCSupervisionRequests,
-    getPGCAssignedSupervisors
+    getPGCAssignedSupervisors,
+    pendingProposals
 }
