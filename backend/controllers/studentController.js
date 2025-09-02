@@ -369,8 +369,10 @@ const getResult = async (req, res) => {
     }
 
     res.json({
-      cgpa: student.cgpa.toFixed(2),
-      obtained_credits: student.obtained_credits.toFixed(2),   
+      student_id: student._id,
+      user_id: student.user_id,
+      cgpa: student.cgpa,
+      obtained_credits: student.obtained_credits,
       current_semester: student.current_semester,
     });
   } catch (err) {
