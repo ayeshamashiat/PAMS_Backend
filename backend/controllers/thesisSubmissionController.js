@@ -1,4 +1,3 @@
-// controllers/thesisSubmissionController.js
 const path = require("path");
 const ThesisSubmission = require("../models/thesisSubmission");
 const ThesisProposal = require("../models/thesisProposal");
@@ -9,24 +8,29 @@ const { sendNotification } = require("../utils/notification");
 // ---- Student ----
 exports.submitThesis = async (req, res) => {
   try {
-    const studentId = req.user.id;
-    const student = await Student.findById(studentId).populate("supervisor_id");
+    // 1) Find Student by the JWT user id (NOT by student _id)
+    const student = await Student.findOne({ user_id: req.user._id }).populate(
+      "supervisor_id"
+    );
     if (!student) return res.status(404).json({ message: "Student not found" });
 
-    // Ensure proposal accepted first
+    const studentId = student._id;
+    const supervisorId = student.supervisor_id?._id || student.supervisor_id;
+
+    // 2) Ensure proposal is accepted first
     const proposal = await ThesisProposal.findOne({
       student_id: studentId,
     }).sort({ createdAt: -1 });
-    const proposalOk =
+    const ok =
       proposal &&
       (proposal.status === "PGCApproved" || proposal.status === "Approved");
-    if (!proposalOk) {
+    if (!ok) {
       return res.status(400).json({
         message: "You cannot submit a thesis until the proposal is accepted.",
       });
     }
 
-    // If there is an existing submission (not rejected/revision), block duplicate
+    // 3) Block duplicate active submissions
     const existing = await ThesisSubmission.findOne({
       student_id: studentId,
     }).sort({ createdAt: -1 });
@@ -39,21 +43,30 @@ exports.submitThesis = async (req, res) => {
         .json({ message: "A thesis submission already exists." });
     }
 
-    const { title = proposal?.title, abstract = "" } = req.body;
-    const file = req.file;
-    const attachment = file ? `/uploads/thesis/${file.filename}` : undefined;
+    // 4) Fields from multipart body + uploaded file
+    const title = req.body.title || proposal.title || "";
+    const abstract = req.body.abstract || "";
+    const attachment = req.file ? `/uploads/${req.file.filename}` : undefined; // your multer saves to 'uploads/'
 
-    const doc = await ThesisSubmission.create({
+    // 5) Create submission
+    const thesis = await ThesisSubmission.create({
       student_id: studentId,
-      supervisor_id: student.supervisor_id,
+      supervisor_id: supervisorId,
       title,
       abstract,
       attachment,
       status: "Submitted",
-      feedbackHistory: [],
+      feedbackHistory: [
+        {
+          status: "Submitted",
+          feedback: "Thesis submitted by student",
+          reviewedBy: "student",
+          date: new Date(),
+        },
+      ],
     });
 
-    // Unlock Thesis Upload stage in progress (if you track it)
+    // 6) Progress: unlock "Thesis Upload"
     let progress = await ThesisProgress.findOne({ student: studentId });
     if (!progress) {
       progress = await ThesisProgress.create({
@@ -69,21 +82,28 @@ exports.submitThesis = async (req, res) => {
       await progress.save();
     }
 
-    sendNotification(
-      studentId,
-      "Thesis submitted and sent to supervisor for review."
-    );
-    res.json({ message: "Thesis submitted successfully.", thesis: doc });
+    // 7) Notify (don’t let a notification error 500 the request)
+    try {
+      sendNotification(
+        studentId,
+        "Thesis submitted and sent to supervisor for review."
+      );
+    } catch {}
+
+    res.json({ message: "Thesis submitted successfully.", thesis });
   } catch (e) {
     console.error("submitThesis error:", e);
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: e.message || "Server error" });
   }
 };
 
+// ---------- Student: my thesis ----------
 exports.getMyThesis = async (req, res) => {
   try {
-    const studentId = req.user.id;
-    const thesis = await ThesisSubmission.findOne({ student_id: studentId })
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) return res.status(404).json({ message: "Student not found" });
+
+    const thesis = await ThesisSubmission.findOne({ student_id: student._id })
       .populate({
         path: "student_id",
         populate: { path: "user_id", select: "first_name last_name email" },
@@ -96,19 +116,24 @@ exports.getMyThesis = async (req, res) => {
 
     res.json({ thesis });
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    console.error("getMyThesis error:", e);
+    res.status(500).json({ message: e.message || "Server error" });
   }
 };
 
+// ---------- Student: download thesis PDF ----------
 exports.downloadThesisPDF = async (req, res) => {
   try {
     const thesis = await ThesisSubmission.findById(req.params.id);
     if (!thesis || !thesis.attachment)
       return res.status(404).send("File not found");
+
+    // thesis.attachment looks like "/uploads/<filename>"
     const absolute = path.join(__dirname, "..", thesis.attachment);
-    return res.sendFile(absolute);
+    res.sendFile(absolute);
   } catch (e) {
-    res.status(500).json({ message: e.message });
+    console.error("downloadThesisPDF error:", e);
+    res.status(500).json({ message: e.message || "Server error" });
   }
 };
 
