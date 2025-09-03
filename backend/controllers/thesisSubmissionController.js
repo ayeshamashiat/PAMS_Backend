@@ -1,3 +1,4 @@
+// controllers/thesisSubmissionController.js
 const path = require("path");
 const ThesisSubmission = require("../models/thesisSubmission");
 const ThesisProposal = require("../models/thesisProposal");
@@ -8,7 +9,7 @@ const { sendNotification } = require("../utils/notification");
 // ---- Student ----
 exports.submitThesis = async (req, res) => {
   try {
-    // 1) Find Student by the JWT user id (NOT by student _id)
+    // Student is always found via JWT's user_id (your protect middleware)
     const student = await Student.findOne({ user_id: req.user._id }).populate(
       "supervisor_id"
     );
@@ -17,38 +18,38 @@ exports.submitThesis = async (req, res) => {
     const studentId = student._id;
     const supervisorId = student.supervisor_id?._id || student.supervisor_id;
 
-    // 2) Ensure proposal is accepted first
+    // must have accepted proposal
     const proposal = await ThesisProposal.findOne({
       student_id: studentId,
     }).sort({ createdAt: -1 });
     const ok =
       proposal &&
-      (proposal.status === "PGCApproved" || proposal.status === "Approved");
+      (proposal.status === "Approved" || proposal.status === "PGCApproved");
     if (!ok) {
       return res.status(400).json({
         message: "You cannot submit a thesis until the proposal is accepted.",
       });
     }
 
-    // 3) Block duplicate active submissions
+    // allow resubmission if Rejected/RevisionRequested/PGCRejected
     const existing = await ThesisSubmission.findOne({
       student_id: studentId,
     }).sort({ createdAt: -1 });
     if (
       existing &&
-      !["Rejected", "RevisionRequested"].includes(existing.status)
+      !["Rejected", "RevisionRequested", "PGCRejected"].includes(
+        existing.status
+      )
     ) {
       return res
         .status(400)
         .json({ message: "A thesis submission already exists." });
     }
 
-    // 4) Fields from multipart body + uploaded file
-    const title = req.body.title || proposal.title || "";
+    const title = (req.body.title || proposal.title || "").trim();
     const abstract = req.body.abstract || "";
-    const attachment = req.file ? `/uploads/${req.file.filename}` : undefined; // your multer saves to 'uploads/'
+    const attachment = req.file ? `/uploads/${req.file.filename}` : undefined;
 
-    // 5) Create submission
     const thesis = await ThesisSubmission.create({
       student_id: studentId,
       supervisor_id: supervisorId,
@@ -66,7 +67,7 @@ exports.submitThesis = async (req, res) => {
       ],
     });
 
-    // 6) Progress: unlock "Thesis Upload"
+    // unlock Thesis Upload stage
     let progress = await ThesisProgress.findOne({ student: studentId });
     if (!progress) {
       progress = await ThesisProgress.create({
@@ -82,7 +83,6 @@ exports.submitThesis = async (req, res) => {
       await progress.save();
     }
 
-    // 7) Notify (don’t let a notification error 500 the request)
     try {
       sendNotification(
         studentId,
@@ -97,50 +97,11 @@ exports.submitThesis = async (req, res) => {
   }
 };
 
-// ---------- Student: my thesis ----------
-exports.getMyThesis = async (req, res) => {
-  try {
-    const student = await Student.findOne({ user_id: req.user._id });
-    if (!student) return res.status(404).json({ message: "Student not found" });
-
-    const thesis = await ThesisSubmission.findOne({ student_id: student._id })
-      .populate({
-        path: "student_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
-      })
-      .populate({
-        path: "supervisor_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
-      })
-      .sort({ createdAt: -1 });
-
-    res.json({ thesis });
-  } catch (e) {
-    console.error("getMyThesis error:", e);
-    res.status(500).json({ message: e.message || "Server error" });
-  }
-};
-
-// ---------- Student: download thesis PDF ----------
-exports.downloadThesisPDF = async (req, res) => {
-  try {
-    const thesis = await ThesisSubmission.findById(req.params.id);
-    if (!thesis || !thesis.attachment)
-      return res.status(404).send("File not found");
-
-    // thesis.attachment looks like "/uploads/<filename>"
-    const absolute = path.join(__dirname, "..", thesis.attachment);
-    res.sendFile(absolute);
-  } catch (e) {
-    console.error("downloadThesisPDF error:", e);
-    res.status(500).json({ message: e.message || "Server error" });
-  }
-};
-
 // ---- Faculty (Supervisor) ----
 exports.listForSupervisor = async (req, res) => {
   try {
-    const facultyId = req.user.faculty_id || req.user.id;
+    // you likely have a Faculty <-> User mapping; adapt if needed
+    const facultyId = req.user.faculty_id || req.user._id;
     const items = await ThesisSubmission.find({ supervisor_id: facultyId })
       .sort({ createdAt: -1 })
       .populate({
@@ -157,8 +118,9 @@ exports.supervisorReview = async (req, res) => {
   try {
     const { submissionId, status, feedback = "" } = req.body;
     const valid = ["Approved", "Rejected", "RevisionRequested", "Comment"];
-    if (!valid.includes(status))
+    if (!valid.includes(status)) {
       return res.status(400).json({ message: "Invalid status" });
+    }
 
     const thesis = await ThesisSubmission.findById(submissionId);
     if (!thesis)
@@ -171,15 +133,29 @@ exports.supervisorReview = async (req, res) => {
       date: new Date(),
       reviewedBy: "supervisor",
     });
+    if (status !== "Comment") thesis.status = status;
     thesis.feedback = feedback || thesis.feedback;
-
-    if (status !== "Comment") thesis.status = status; // Approved/Rejected/RevisionRequested
     await thesis.save();
 
-    sendNotification(
-      thesis.student_id,
-      `Supervisor ${status.toLowerCase()} your thesis submission.`
-    );
+    try {
+      if (status === "Approved") {
+        sendNotification(
+          thesis.student_id,
+          "Supervisor approved your thesis. Awaiting PGC final approval."
+        );
+      } else if (status === "Rejected") {
+        sendNotification(
+          thesis.student_id,
+          "Supervisor rejected your thesis. Please review feedback and resubmit."
+        );
+      } else if (status === "RevisionRequested") {
+        sendNotification(
+          thesis.student_id,
+          "Supervisor requested thesis revisions."
+        );
+      }
+    } catch {}
+
     res.json({ message: "Review saved.", thesis });
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -189,6 +165,9 @@ exports.supervisorReview = async (req, res) => {
 // ---- PGC ----
 exports.pgcList = async (req, res) => {
   try {
+    // Pending PGC list == supervisor Approved
+    // Approved by PGC == PGCApproved
+    // Rejected by PGC == PGCRejected
     const statuses = String(req.query.status || "Approved")
       .split(",")
       .map((s) => s.trim());
@@ -222,8 +201,8 @@ exports.pgcReview = async (req, res) => {
     if (!thesis)
       return res.status(404).json({ message: "Submission not found" });
 
-    // Must be supervisor-approved unless it's a comment
-    if (thesis.status !== "Approved" && status !== "Comment") {
+    // PGC can act only after supervisor Approved (except Comment)
+    if (status !== "Comment" && thesis.status !== "Approved") {
       return res.status(400).json({
         message: "Submission must be supervisor-approved before PGC review.",
       });
@@ -240,30 +219,82 @@ exports.pgcReview = async (req, res) => {
 
     if (status === "Approved") {
       thesis.status = "PGCApproved";
-      // Optional: advance progress to next stage (Predefense)
+      // unlock defense scheduling stage
       await ThesisProgress.updateOne(
         { student: thesis.student_id },
         {
-          $addToSet: { unlocked_stages: "Predefense" },
-          $set: { current_stage: "Predefense" },
+          $addToSet: { unlocked_stages: "Defense Scheduling" },
+          $set: { current_stage: "Defense Scheduling" },
         },
         { upsert: true }
       );
-      sendNotification(
-        thesis.student_id,
-        "Your thesis submission has been approved by PGC."
-      );
+      try {
+        sendNotification(
+          thesis.student_id,
+          "Your thesis has been approved by PGC."
+        );
+      } catch {}
     } else if (status === "Rejected") {
       thesis.status = "PGCRejected";
-      sendNotification(
-        thesis.student_id,
-        "Your thesis submission has been rejected by PGC."
-      );
+      try {
+        sendNotification(
+          thesis.student_id,
+          "PGC rejected your thesis. Please review feedback and resubmit."
+        );
+      } catch {}
     }
-    await thesis.save();
 
+    await thesis.save();
     res.json({ message: `Thesis ${status.toLowerCase()} by PGC.`, thesis });
   } catch (e) {
     res.status(500).json({ message: e.message });
+  }
+};
+
+// --- add these in thesisSubmissionController.js ---
+
+// Student: view my thesis submission
+exports.getMyThesis = async (req, res) => {
+  try {
+    const student = await Student.findOne({ user_id: req.user._id });
+    if (!student) return res.status(404).json({ message: "Student not found" });
+
+    const thesis = await ThesisSubmission.findOne({ student_id: student._id })
+      .sort({ createdAt: -1 })
+      .populate({
+        path: "student_id",
+        populate: { path: "user_id", select: "first_name last_name email" },
+      })
+      .populate({
+        path: "supervisor_id",
+        populate: { path: "user_id", select: "first_name last_name email" },
+      });
+
+    // return null if nothing submitted yet (frontend handles it)
+    return res.json({ thesis });
+  } catch (e) {
+    console.error("getMyThesis error:", e);
+    res.status(500).json({ message: e.message || "Server error" });
+  }
+};
+
+// Student: download my thesis PDF
+exports.downloadThesisPDF = async (req, res) => {
+  try {
+    const thesis = await ThesisSubmission.findById(req.params.id);
+    if (!thesis || !thesis.attachment) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    // your code saves attachment as "/uploads/<filename>" (leading slash)
+    const rel = thesis.attachment.startsWith("/")
+      ? thesis.attachment.slice(1)
+      : thesis.attachment;
+
+    const absolute = path.join(process.cwd(), rel);
+    return res.sendFile(absolute);
+  } catch (e) {
+    console.error("downloadThesisPDF error:", e);
+    res.status(500).json({ message: e.message || "Server error" });
   }
 };
