@@ -1,156 +1,221 @@
+// controllers/thesisProgressController.js
 const Student = require('../models/student');
 const ThesisProgress = require('../models/thesisProgress');
 const ThesisProposal = require('../models/thesisProposal');
-const SupervisorAssignment = require('../models/supervisorAssignment'); // Add this import
-const { computeUnlockedStages } = require('../services/progressService');
+const SupervisorAssignment = require('../models/supervisorAssignment');
 
 const stageLabels = {
-  Proposal: "Thesis Proposal",
-  Thesis: "Thesis Upload", 
-  Predefense: "Predefense",
-  Defense: "Defense",
-  "Supervisor Assignment": "Supervisor Assignment",
-  Enrolled: "Enrolled",
+  Proposal: 'Thesis Proposal',
+  Thesis: 'Thesis Upload',
+  Predefense: 'Predefense',
+  Defense: 'Defense',
+  'Supervisor Assignment': 'Supervisor Assignment',
+  Enrolled: 'Enrolled',
 };
 
+/**
+ * Helper: determine if a student has an assigned supervisor
+ * Conditions:
+ *  - student.supervisor_id is set  OR
+ *  - a SupervisorAssignment exists whose overall_status is "Assigned" OR
+ *    priority_list contains a PGC-approved choice (PGCAccepted)
+ */
+async function hasAssignedSupervisor(studentId, directSupervisorId) {
+  if (directSupervisorId) return true;
+
+  const assignment = await SupervisorAssignment.findOne({ student_id: studentId }).lean();
+  if (!assignment) return false;
+
+  if (assignment.overall_status === 'Assigned') return true;
+
+  const pgcAccepted = (assignment.priority_list || []).some(
+    (p) => p.status === 'PGCAccepted'
+  );
+  return pgcAccepted;
+}
+
+/**
+ * Build a normalized progress array in a consistent order
+ */
+function buildProgress({ hasSupervisor, isEligibleForProposal }) {
+  return [
+    {
+      step: 'Supervisor Assignment',
+      unlocked: !!hasSupervisor,
+    },
+    {
+      step: 'Thesis Proposal',
+      unlocked: !!isEligibleForProposal,
+    },
+    {
+      step: 'Proposal Upload',
+      unlocked: false, // Placeholder – unlock when you add upload logic
+    },
+    {
+      step: 'Thesis Upload',
+      unlocked: false, // Placeholder – unlock upon supervisor/PGC approvals
+    },
+    {
+      step: 'Predefense',
+      unlocked: false,
+    },
+    {
+      step: 'Defense',
+      unlocked: false,
+    },
+  ];
+}
+
+/**
+ * GET /api/thesis-progress/check
+ * More detailed eligibility endpoint (if you use this route)
+ */
+const checkProgressEligibility = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ eligible: false, reason: 'Unauthorized', progress: [] });
+    }
+
+    // Fetch student (populate single supervisor, your schema has supervisor_id)
+    const student = await Student.findOne({ user_id: userId }).populate('supervisor_id');
+    if (!student) {
+      return res
+        .status(404)
+        .json({ eligible: false, reason: 'Student not found.', progress: [] });
+    }
+
+    // Determine supervisor assignment
+    const hasSupervisor = await hasAssignedSupervisor(student._id, student.supervisor_id);
+
+    // Eligibility rules
+    const earnedCredits = Number(student.obtained_credits || 0);
+    const cgpa = Number(student.cgpa || 0);
+    const hasMinCGPA = cgpa >= 2.5;
+    const hasMinCredits = earnedCredits >= 9;
+    const isEligible = hasMinCGPA && hasMinCredits && hasSupervisor;
+
+    // Reason message (first unmet reason reported)
+    let reason = '';
+    if (!hasMinCredits) reason = 'Need at least 9 completed credits.';
+    else if (!hasMinCGPA) reason = 'CGPA must be at least 2.5.';
+    else if (!hasSupervisor) reason = 'No supervisor assigned yet.';
+
+    // Build progress
+    const progress = buildProgress({
+      hasSupervisor,
+      isEligibleForProposal: isEligible,
+    });
+
+    // Create or update ThesisProgress doc (optional bookkeeping)
+    let thesisProgress = await ThesisProgress.findOne({ student: student._id });
+    if (!thesisProgress) {
+      thesisProgress = await ThesisProgress.create({
+        student: student._id,
+        current_stage: 'Enrolled',
+        unlocked_stages: progress.filter((p) => p.unlocked).map((p) => p.step),
+      });
+    } else {
+      thesisProgress.unlocked_stages = progress.filter((p) => p.unlocked).map((p) => p.step);
+      // Advance current stage if needed
+      if (isEligible && thesisProgress.current_stage === 'Enrolled') {
+        thesisProgress.current_stage = 'Proposal';
+      }
+      await thesisProgress.save();
+    }
+
+    return res.status(200).json({
+      eligible: isEligible,
+      reason: isEligible ? '' : reason,
+      progress,
+      currentStage: thesisProgress.current_stage,
+    });
+  } catch (err) {
+    console.error('Eligibility check error:', err);
+    return res.status(500).json({ eligible: false, reason: 'Server error.', progress: [] });
+  }
+};
+
+/**
+ * GET /api/students/progress
+ * This one is used by your ThesisPage front-end.
+ * Responds with:
+ *  - isEligible (same rule as above)
+ *  - message
+ *  - progress array
+ *  - studentInfo snapshot
+ */
 const getThesisProgress = async (req, res) => {
   try {
-    const studentId = req.user.id;
-
-    // ✅ Find student record
-    const student = await Student.findById(studentId).populate("supervisors");
-    if (!student) {
-      return res.status(404).json({
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(401).json({
         isEligible: false,
-        message: "Student not found.",
+        message: 'Unauthorized.',
         progress: [],
         supervisors: [],
       });
     }
 
-    // ✅ Check eligibility (your existing logic)
-    const isEligible = checkEligibility(student); // <- your function
+    // Find student and (optionally) supervisor
+    const student = await Student.findOne({ user_id: userId }).populate('supervisor_id');
+    if (!student) {
+      return res.status(404).json({
+        isEligible: false,
+        message: 'Student not found.',
+        progress: [],
+        supervisors: [],
+      });
+    }
+
+    // Determine supervisor assignment
+    const hasSupervisor = await hasAssignedSupervisor(student._id, student.supervisor_id);
+
+    // Eligibility rules (must have supervisor)
+    const earnedCredits = Number(student.obtained_credits || 0);
+    const cgpa = Number(student.cgpa || 0);
+    const hasMinCGPA = cgpa >= 2.5;
+    const hasMinCredits = earnedCredits >= 9;
+    const isEligible = hasMinCGPA && hasMinCredits && hasSupervisor;
+
     const message = isEligible
-      ? "You meet the requirements for thesis proposal."
-      : "You are not eligible yet. Complete required steps first.";
+      ? 'You meet the requirements for thesis proposal.'
+      : 'You are not eligible yet. Complete required steps first.';
 
-    // ✅ Build progress array (always include key stages in order)
-    const progress = [
-      {
-        step: "Supervisor Assignment",
-        unlocked: Boolean(student.supervisors?.length > 0),
-      },
-      {
-        step: "Thesis Proposal",
-        unlocked: isEligible,
-      },
-      {
-        step: "Proposal Upload",
-        unlocked: false, // default, update when you add upload logic
-      },
-    ];
+    // Normalized progress
+    const progress = buildProgress({
+      hasSupervisor,
+      isEligibleForProposal: isEligible,
+    });
 
-    // ✅ Normalize supervisors (avoid sending full mongoose docs)
-    const supervisors = student.supervisors?.map((s) => ({
-      id: s._id,
-      name: s.name,
-      department: s.department,
-    })) || [];
+    // Student snapshot for the UI
+    const studentInfo = {
+      cgpa,
+      obtained_credits: earnedCredits,
+      hasSupervisor,
+      supervisorName: hasSupervisor
+        ? `${student.supervisor_id?.user_id?.first_name || ''} ${student.supervisor_id?.user_id?.last_name || ''}`.trim()
+        : null,
+    };
 
-    // ✅ Consistent JSON response
     return res.json({
       isEligible,
       message,
       progress,
-      supervisors,
+      studentInfo,
     });
-
   } catch (error) {
-    console.error("Error in getThesisProgress:", error);
+    console.error('Error in getThesisProgress:', error);
     return res.status(500).json({
       isEligible: false,
-      message: "Server error while fetching progress.",
+      message: 'Server error while fetching progress.',
       progress: [],
-      supervisors: [],
+      studentInfo: null,
     });
   }
 };
 
-const checkProgressEligibility = async (req, res) => {
-  try {
-    const studentId = req.user.id;
-
-    // 1️⃣ Fetch student and populate supervisors
-    const student = await Student.findById(studentId).populate("supervisor_id");
-    if (!student) {
-      return res.status(404).json({ eligible: false, reason: "Student not found.", progress: [] });
-    }
-
-    // 2️⃣ Check supervisor assignment
-    let hasSupervisor = !!student.supervisor_id;
-    if (!hasSupervisor) {
-      const supervisorAssignment = await SupervisorAssignment.findOne({ student_id: student._id });
-      if (supervisorAssignment) {
-        hasSupervisor = supervisorAssignment.priority_list.some(p => p.status === 'PGCAccepted');
-      }
-    }
-
-    // 3️⃣ Check CGPA and credits
-    const hasMinCGPA = Number(student.cgpa) > 2.5;
-    const hasMinCredits = Number(student.obtained_credits) >= 9;
-
-    // 4️⃣ Determine eligibility
-    const isEligible = hasMinCGPA && hasMinCredits && hasSupervisor;
-
-    let reason = "";
-    if (!hasMinCredits) reason = "Need at least 9 credits.";
-    else if (!hasMinCGPA) reason = "CGPA must be above 2.5.";
-    else if (!hasSupervisor) reason = "No supervisor assigned yet.";
-
-    // 5️⃣ Compute unlocked stages
-    const unlockedStages = await computeUnlockedStages(student);
-    const progress = unlockedStages.map(s => ({
-      step: stageLabels[s.step] || s.step,
-      unlocked: s.unlocked,
-    }));
-
-    // 6️⃣ Fetch or create thesis progress record
-    let thesisProgress = await ThesisProgress.findOne({ student: student._id });
-    if (!thesisProgress) {
-      thesisProgress = await ThesisProgress.create({
-        student: student._id,
-        current_stage: "Enrolled",
-        unlocked_stages: progress.filter(s => s.unlocked).map(s => s.step),
-        feedbackHistory: [],
-      });
-    } else {
-      thesisProgress.unlocked_stages = progress.filter(s => s.unlocked).map(s => s.step);
-    }
-
-    // 7️⃣ Optional: update current stage if eligible
-    if (isEligible && !thesisProgress.unlocked_stages.includes("Thesis Proposal")) {
-      thesisProgress.current_stage = "Proposal";
-      thesisProgress.unlocked_stages.push("Thesis Proposal");
-    }
-
-    await thesisProgress.save();
-
-    // 8️⃣ Return clean JSON
-    res.status(200).json({
-      eligible: isEligible,
-      reason: isEligible ? "" : reason,
-      progress,
-      currentStage: thesisProgress.current_stage,
-      feedbackHistory: thesisProgress.feedbackHistory,
-    });
-
-  } catch (err) {
-    console.error("Eligibility check error:", err);
-    res.status(500).json({ eligible: false, reason: "Server error.", progress: [] });
-  }
-};
-
-module.exports = { 
+module.exports = {
   checkProgressEligibility,
-  getThesisProgress 
+  getThesisProgress,
 };
