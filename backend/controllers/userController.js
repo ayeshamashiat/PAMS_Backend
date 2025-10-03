@@ -35,6 +35,14 @@ const createStudent = async (req, res) => {
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
+    const currentDate = new Date();
+    const current_year = currentDate.getFullYear();
+    if(admission_year<current_year){
+      return res.status(400).json({message: 'Admission year cannot be in past'});
+    }
+    if(admission_year>current_year){
+      return res.status(400).json({message: 'Admission year cannot be in future'})
+    }
 
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);

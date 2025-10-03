@@ -185,8 +185,6 @@ const getMyProposal = async (req, res) => {
 const downloadProposalPDF = async (req, res) => {
   try {
     const { proposalId } = req.params;
-
-    // Find the student associated with this user
     const student = await Student.findOne({ user_id: req.user._id });
     if (!student) {
       return res.status(404).json({ message: 'Student profile not found' });
