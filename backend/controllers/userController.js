@@ -23,30 +23,27 @@ const createStudent = async (req, res) => {
       last_name,
       program_id, 
       department,
-      admission_year,
       supervisor_id
     } = req.body;
 
-    if (!student_number  || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
+    if (!student_number || !email || !first_name || !last_name || !program_id || !department) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
+    // check if user or student already exists
     const existingUser = await User.findOne({ $or: [{ email }, { student_number }] });
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
-    const currentDate = new Date();
-    const current_year = currentDate.getFullYear();
-    if(admission_year<current_year){
-      return res.status(400).json({message: 'Admission year cannot be in past'});
-    }
-    if(admission_year>current_year){
-      return res.status(400).json({message: 'Admission year cannot be in future'})
-    }
 
+    // enforce admission year = current year only
+    const currentYear = new Date().getFullYear();
+
+    // password generation + hashing
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
+    // create user
     const newUser = new User({
       email,
       password_hash: hashedPassword,
@@ -55,21 +52,25 @@ const createStudent = async (req, res) => {
       department,
       role: 'Student'
     });
-
     const savedUser = await newUser.save();
 
+    // create student with schema-aligned fields
     const student = new Student({
       user_id: savedUser._id,
-      student_number: student_number,
-      program_id: program_id,
-      supervisor_id: null,
-      admission_year: admission_year,
+      student_number,
+      program_id,
+      admission_year: currentYear, // enforce here
       current_semester: 1,
-      obtained_credits: 0
+      cgpa: 0.0,
+      total_credit_hours: 0,
+      obtained_credits: 0,
+      supervisor_id: supervisor_id || null,
+      status: 'Applied'
     });
 
     await student.save();
 
+    // email creds
     await sendEmail({
       email,
       subject: 'Your Student Account Credentials',
@@ -103,71 +104,105 @@ Admin Team`
 
 const uploadStudentsFromCSV = async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded' });
+    return res.status(400).json({ message: "No file uploaded" });
   }
 
+  const filePath = req.file.path;
   const results = [];
   const failed = [];
 
-  fs.createReadStream(req.file.path)
-    .pipe(csv())
-    .on('data', (data) => results.push(data))
-    .on('end', async () => {
-      for (const row of results) {
-        const {
-          student_number,
-          email,
-          first_name,
-          last_name,
-          program_id,
-          department,
-          admission_year,
-          supervisor_id 
-        } = row;
+  try {
+    // Parse CSV file
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on("data", (data) => results.push(data))
+      .on("end", async () => {
+        for (const row of results) {
+          const {
+            student_number,
+            email,
+            first_name,
+            last_name,
+            program_id,
+            department,
+            supervisor_id
+          } = row;
 
-        if (!student_number || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
-          failed.push({ student_number, reason: 'Missing required fields' });
-          continue;
-        }
-
-        try {
-          const existingUser = await User.findOne({ $or: [{ email }] });
-          if (existingUser) {
-            failed.push({ student_number, reason: 'User already exists' });
+          // Validation: Check for required fields
+          if (!student_number || !email || !first_name || !last_name || !program_id || !department) {
+            failed.push({ student_number: student_number || "N/A", reason: "All fields are required" });
             continue;
           }
 
-          const rawPassword = generatePassword();
-          const hashedPassword = await bcrypt.hash(rawPassword, 10);
+          try {
+            // Validate department against schema enum
+            const validDepartments = ['CSE', 'EEE', 'MPE', 'CEE', 'BTM'];
+            if (!validDepartments.includes(department)) {
+              failed.push({ student_number, reason: `Invalid department: ${department}` });
+              continue;
+            }
 
-          const newUser = new User({
-            email,
-            password_hash: hashedPassword,
-            first_name,
-            last_name,
-            department,
-            role: 'Student'
-          });
+            // Validate program_id against schema enum
+            const validPrograms = [
+              'M.Sc. CSE', 'M.Sc. CE', 'M.Sc. ME', 'M.Sc. EEE', 'M.Sc. TVE',
+              'M.Engg. CSE', 'M.Engg. ME', 'M.Engg. EEE', 'M.Engg. CE',
+              'PhD CSE', 'PhD ME', 'PhD CE', 'PhD EEE', 'PhD TE'
+            ];
+            if (!validPrograms.includes(program_id)) {
+              failed.push({ student_number, reason: `Invalid program_id: ${program_id}` });
+              continue;
+            }
 
-          const savedUser = await newUser.save();
+            // Check if user or student already exists
+            const existingUser = await User.findOne({ $or: [{ email }, { student_number }] });
+            if (existingUser) {
+              failed.push({ student_number, reason: "User already exists" });
+              continue;
+            }
 
-          const student = new Student({
-            user_id: savedUser._id,
-            student_number,
-            program_id,
-            admission_year,
-            current_semester: 1,
-            supervisor_id: null
-          });
+            // Enforce admission year as current year
+            const currentYear = new Date().getFullYear();
 
-          await student.save();
+            // Generate and hash password
+            const rawPassword = generatePassword();
+            const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-          await sendEmail({
-            email,
-            subject: 'Your Student Account Credentials',
-            message: `Dear ${first_name},
+            // Create User
+            const newUser = new User({
+              email,
+              password_hash: hashedPassword,
+              first_name,
+              last_name,
+              department,
+              role: "Student"
+            });
+            const savedUser = await newUser.save();
+
+            // Create Student
+            const student = new Student({
+              user_id: savedUser._id,
+              student_number,
+              program_id,
+              admission_year: currentYear,
+              current_semester: 1,
+              cgpa: 0.0,
+              total_credit_hours: 0,
+              obtained_credits: 0,
+              supervisor_id: supervisor_id || null,
+              status: "Applied",
+              admission_date: currentYear,
+            });
+
+            await student.save();
+
+            // Send email with credentials
+            await sendEmail({
+              email,
+              subject: "Your Student Account Credentials",
+              message: `Dear ${first_name},
 
 Your student account has been created.
+Student Number: ${student_number}
 
 Login credentials:
 Email: ${email}
@@ -177,21 +212,36 @@ Please change your password after logging in.
 
 Regards,
 Admin Team`
-          });
+            });
 
-        } catch (err) {
-          failed.push({ student_number, reason: err.message });
+          } catch (err) {
+            console.error(`Error processing student ${student_number}:`, err);
+            failed.push({ student_number, reason: err.message });
+          }
         }
-      }
 
-      fs.unlinkSync(filePath);
-      return res.status(201).json({
-        message: 'Bulk student upload completed',
-        total: results.length,
-        failed: failed.length,
-        errors: failed
+        // Delete the uploaded CSV file
+        fs.unlinkSync(filePath);
+
+        // Return response
+        return res.status(201).json({
+          message: "Bulk student upload completed",
+          total: results.length,
+          successful: results.length - failed.length,
+          failed: failed.length,
+          errors: failed
+        });
+      })
+      .on("error", (err) => {
+        console.error("CSV parsing error:", err);
+        fs.unlinkSync(filePath);
+        return res.status(500).json({ message: "Error processing CSV file" });
       });
-    });
+  } catch (error) {
+    console.error("Upload students error:", error);
+    fs.unlinkSync(filePath);
+    return res.status(500).json({ message: "Internal server error" });
+  }
 };
 
 const createFaculty = async (req, res) => {
@@ -824,7 +874,6 @@ const autoAssignCourses = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
-
 
 const assignCourseManually = async (req, res) => {
   try {
