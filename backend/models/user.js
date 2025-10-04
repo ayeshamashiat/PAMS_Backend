@@ -6,8 +6,9 @@ const userSchema = new mongoose.Schema({
   first_name:    { type: String, required: true },
   last_name:     { type: String, required: true },
   department:    { type: String, 
-    enum: ['CSE', 'EEE', 'MPE', 'CEE', 'BTM'],
-    required: true }, 
+    enum: ['CSE', 'EEE', 'ME', 'CE', 'TVE'],
+    required: true 
+  }, 
   role: {
     type: String,
     enum: ['Student', 'Faculty', 'Admin', 'PGC', 'CASR'], 

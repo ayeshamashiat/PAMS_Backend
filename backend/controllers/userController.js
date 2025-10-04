@@ -112,7 +112,6 @@ const uploadStudentsFromCSV = async (req, res) => {
   const failed = [];
 
   try {
-    // Parse CSV file
     fs.createReadStream(filePath)
       .pipe(csv())
       .on("data", (data) => results.push(data))
@@ -201,17 +200,17 @@ const uploadStudentsFromCSV = async (req, res) => {
               subject: "Your Student Account Credentials",
               message: `Dear ${first_name},
 
-Your student account has been created.
-Student Number: ${student_number}
+              Your student account has been created.
+              Student Number: ${student_number}
 
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
+              Login credentials:
+              Email: ${email}
+              Password: ${rawPassword}
 
-Please change your password after logging in.
+              Please change your password after logging in.
 
-Regards,
-Admin Team`
+              Regards,
+              Admin Team`
             });
 
           } catch (err) {
@@ -410,107 +409,121 @@ Admin Team`
 };
 
 const createBulkFacultyFromCSV = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
+
+  const filePath = req.file.path;
+  const results = [];
+  const failed = [];
+
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'CSV file is required' });
-    }
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on("data", (data) => results.push(data))
+      .on("end", async () => {
+        for (const row of results) {
+          const {
+            faculty_number,
+            email,
+            first_name,
+            last_name,
+            department,
+            designation,
+            specialization,
+            research_interests
+          } = row;
 
-    const filePath = req.file.path;
-    const rows = await parseCSV(filePath);
+          // Validation: Check for required fields
+          if (!faculty_number || !email || !first_name || !last_name || !designation || !department) {
+            failed.push({ faculty_number: faculty_number || "N/A", reason: "All fields are required" });
+            continue;
+          }
 
-    const results = [];
+          try {
+            const existingUser = await User.findOne({ $or: [{ email }, { faculty_number }] });
+            if (existingUser) {
+              failed.push({ faculty_number, reason: "User already exists" });
+              continue;
+            }
+            // Generate and hash password
+            const rawPassword = generatePassword();
+            const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-    for (const row of rows) {
-      const {
-        faculty_number,
-        email,
-        first_name,
-        last_name,
-        department,
-        designation,
-        specialization,
-        research_interests
-      } = row;
+            // Create User
+            const newUser = new User({
+              email,
+              password_hash: hashedPassword,
+              first_name,
+              last_name,
+              department,
+              role: "Faculty"
+            });
+            const savedUser = await newUser.save();
 
-      const result = { email, success: false, message: '' };
+            // Create Student
+            const newFaculty = new Faculty({
+              user_id: savedUser._id,
+              employee_id: faculty_number,
+              department_id: null, 
+              designation,
+              specialization: specialization || '',
+              research_interests: research_interests || '',
+              max_supervision_capacity: 5,
+              current_supervision_count: 0
+            });
 
-      // Validate required fields
-      if (!faculty_number || !email || !first_name || !last_name || !department || !designation) {
-        result.message = 'Missing required fields';
-        results.push(result);
-        continue;
-      }
+            await newFaculty.save();
 
-      try {
-        const existingUser = await User.findOne({ email }, {faculty_number});
-        if (existingUser) {
-          result.message = 'User already exists';
-          results.push(result);
-          continue;
+            // Send email with credentials
+            await sendEmail({
+              email,
+              subject: "Your Faculty Account Credentials",
+              message: `Dear ${first_name},
+
+              Your faculty account has been created.
+              Faculty Number: ${faculty_number}
+
+              Login credentials:
+              Email: ${email}
+              Password: ${rawPassword}
+
+              Please change your password after logging in.
+
+              Regards,
+              Admin Team`
+            });
+
+          } catch (err) {
+            console.error(`Error processing faculty ${faculty_number}:`, err);
+            failed.push({ faculty_number, reason: err.message });
+          }
         }
 
-        const rawPassword = generatePassword();
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+        // Delete the uploaded CSV file
+        fs.unlinkSync(filePath);
 
-        const newUser = new User({
-          email,
-          password_hash: hashedPassword,
-          first_name,
-          last_name,
-          department,
-          role: 'Faculty'
+        // Return response
+        return res.status(201).json({
+          message: "Bulk faculty upload completed",
+          total: results.length,
+          successful: results.length - failed.length,
+          failed: failed.length,
+          errors: failed
         });
-
-        const savedUser = await newUser.save();
-
-        const newFaculty = new Faculty({
-          user_id: savedUser._id,
-          employee_id: faculty_number,
-          department_id: null, // optional
-          designation,
-          specialization: specialization || '',
-          research_interests: research_interests || '',
-          max_supervision_capacity: 5,
-          current_supervision_count: 0
-        });
-
-        await newFaculty.save();
-
-        await sendEmail({
-          email,
-          subject: 'Your Faculty Account Credentials',
-          message: `Dear ${first_name},
-
-Your faculty account has been created.
-Faculty Number: ${faculty_number}
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-        });
-
-        result.success = true;
-        result.message = 'Faculty created and email sent';
-        results.push(result);
-
-      } catch (err) {
-        result.message = `Error: ${err.message}`;
-        results.push(result);
-      }
-    }
-
-    fs.unlinkSync(filePath); // Delete uploaded file after processing
-    res.status(207).json({ results });
-
+      })
+      .on("error", (err) => {
+        console.error("CSV parsing error:", err);
+        fs.unlinkSync(filePath);
+        return res.status(500).json({ message: "Error processing CSV file" });
+      });
   } catch (error) {
-    console.error('CSV upload error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Upload faculty error:", error);
+    fs.unlinkSync(filePath);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 const getAdminProfile = async (req, res) => {
   try {

@@ -24,12 +24,13 @@ const {
 } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 const uploadStudentCSV = require("../middleware/uploadStudentCSV");
+const uploadFacultyCSV = require("../middleware/uploadFacultyCSV");
 
 router.post('/create-student/manual-student-creation', createStudent);
 router.post('/create-faculty', createFaculty);
 router.post('/create-pgc', createPGC);
 router.post("/create-student/bulk-upload", uploadStudentCSV.single("file"), uploadStudentsFromCSV);
-router.post('/create-faculty/bulk-upload', upload.single('file'), createBulkFacultyFromCSV);
+router.post('/create-faculty/bulk-upload', uploadFacultyCSV.single("file"), createBulkFacultyFromCSV);
 router.post('/upload-courses', upload.single('file'), pushCoursesFromCSV);
 router.post('/assign-courses', autoAssignCourses);
 router.post('/assign-courses-manually', assignCourseManually);

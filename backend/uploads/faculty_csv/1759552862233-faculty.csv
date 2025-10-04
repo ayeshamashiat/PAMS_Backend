@@ -1,0 +1,4 @@
+first_name,last_name,email,department,role,employee_id,designation,specialization,research_interests
+Abdul,Rahman,abdul.rahman@iut-dhaka.edu,CSE,Faculty,F001,Assistant Professor,Artificial Intelligence,Machine Learning
+Sara,Hossain,sara.hossain@iut-dhaka.edu,EEE,Faculty,F002,Lecturer,Power Systems,Renewable Energy
+Mahmud,Kamal,mahmud.kamal@iut-dhaka.edu,ME,Faculty,F003,Associate Professor,Robotics,Control Systems
