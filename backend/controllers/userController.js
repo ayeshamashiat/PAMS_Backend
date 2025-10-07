@@ -93,71 +93,75 @@ Admin Team`
   }
 };
 
+// controllers/userController.js (replace uploadStudentsFromCSV)
 const uploadStudentsFromCSV = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
 
-  const results = [];
+  const filePath = req.file.path; // <-- define once
   const failed = [];
+  let total = 0;
 
-  fs.createReadStream(req.file.path)
-    .pipe(csv())
-    .on('data', (data) => results.push(data))
-    .on('end', async () => {
-      for (const row of results) {
-        const {
-          student_number,
-          email,
-          first_name,
-          last_name,
-          program_id,
-          department,
-          admission_year,
-          supervisor_id 
-        } = row;
+  // normalize helper
+  const pick = (obj, key) => (obj?.[key] ?? '').toString().trim();
 
-        if (!student_number || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
-          failed.push({ student_number, reason: 'Missing required fields' });
+  const stream = fs.createReadStream(filePath).pipe(csv());
+
+  try {
+    for await (const row of stream) {
+      total += 1;
+
+      const student_number = pick(row, 'student_number');
+      const email = pick(row, 'email').toLowerCase();
+      const first_name = pick(row, 'first_name');
+      const last_name = pick(row, 'last_name');
+      const program_id = pick(row, 'program_id');
+      const department = pick(row, 'department');
+      const admission_year = Number.parseInt(pick(row, 'admission_year'), 10);
+
+      if (
+        !student_number || !email || !first_name || !last_name ||
+        !program_id || !department || !admission_year
+      ) {
+        failed.push({ student_number, reason: 'Missing required fields' });
+        continue;
+      }
+
+      try {
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+          failed.push({ student_number, reason: 'User already exists' });
           continue;
         }
 
-        try {
-          const existingUser = await User.findOne({ $or: [{ email }] });
-          if (existingUser) {
-            failed.push({ student_number, reason: 'User already exists' });
-            continue;
-          }
+        const rawPassword = generatePassword();
+        const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-          const rawPassword = generatePassword();
-          const hashedPassword = await bcrypt.hash(rawPassword, 10);
+        const savedUser = await new User({
+          email,
+          password_hash: hashedPassword,
+          first_name,
+          last_name,
+          department,
+          role: 'Student',
+        }).save();
 
-          const newUser = new User({
-            email,
-            password_hash: hashedPassword,
-            first_name,
-            last_name,
-            department,
-            role: 'Student'
-          });
+        await new Student({
+          user_id: savedUser._id,
+          student_number,
+          program_id,
+          admission_year,
+          current_semester: 1,
+          supervisor_id: null,
+          obtained_credits: 0,
+        }).save();
 
-          const savedUser = await newUser.save();
-
-          const student = new Student({
-            user_id: savedUser._id,
-            student_number,
-            program_id,
-            admission_year,
-            current_semester: 1,
-            supervisor_id: null
-          });
-
-          await student.save();
-
-          await sendEmail({
-            email,
-            subject: 'Your Student Account Credentials',
-            message: `Dear ${first_name},
+        // Non-fatal email
+        sendEmail({
+          email,
+          subject: 'Your Student Account Credentials',
+          message: `Dear ${first_name},
 
 Your student account has been created.
 
@@ -168,23 +172,30 @@ Password: ${rawPassword}
 Please change your password after logging in.
 
 Regards,
-Admin Team`
-          });
+Admin Team`,
+        }).catch(err => {
+          failed.push({ student_number, reason: `Created but email failed: ${err.message}` });
+        });
 
-        } catch (err) {
-          failed.push({ student_number, reason: err.message });
-        }
+      } catch (err) {
+        failed.push({ student_number, reason: err.message });
       }
+    }
 
-      fs.unlinkSync(filePath);
-      return res.status(201).json({
-        message: 'Bulk student upload completed',
-        total: results.length,
-        failed: failed.length,
-        errors: failed
-      });
+    return res.status(201).json({
+      message: 'Bulk student upload completed',
+      total,
+      failed: failed.length,
+      errors: failed,
     });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to process CSV', error: err.message });
+  } finally {
+    // Always attempt cleanup; never inside the csv-parser handler
+    try { await fs.promises.unlink(filePath); } catch {}
+  }
 };
+
 
 const createFaculty = async (req, res) => {
   try {

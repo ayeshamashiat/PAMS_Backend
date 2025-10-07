@@ -1,0 +1,7 @@
+"student_number,email,first_name,last_name,program_id,department,admission_year"
+"S2025001,alice.cse@example.com,Alice,Johnson,M.Sc_CSE,CSE,2025"
+"S2025002,bob.mpe@example.com,Bob,Smith,M.Sc_MPE,MPE,2025"
+"S2025003,carol.eee@example.com,Carol,Davis,M.Sc_EEE,EEE,2025"
+"S2025004,david.btm@example.com,David,Brown,M.Sc_BTM,BTM,2025"
+"S2025005,emma.cee@example.com,Emma,Wilson,M.Sc_CEE,CEE,2025"
+"S2025006,frank.cse@example.com,Frank,Taylor,M.Sc_CSE,CSE,2025"

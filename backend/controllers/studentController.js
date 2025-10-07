@@ -21,6 +21,8 @@ const getStudentProfile = async (req, res) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
+    console.log('student is ', user);
+
     const student = await Student.findOne({ user_id: user._id });
     if (!student)
       return res.status(404).json({ message: "Student details not found" });

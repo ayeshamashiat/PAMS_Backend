@@ -26,6 +26,8 @@ const thesisSubmissionSchema = new mongoose.Schema(
         "Under Review",
         "Approved",
         "RevisionRequested",
+        "SupervisorAccepted",
+        "Supervisorrejected",
         "Rejected",
         "PGCApproved",
         "PGCRejected",
