@@ -16,7 +16,7 @@ const { getThesisProgress } = require('./thesisProgressController');
  */
 const getStudentProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).lean({virtuals: true});
     if (!user || user.role !== 'Student') {
       return res.status(404).json({ message: 'Student not found' });
     }
