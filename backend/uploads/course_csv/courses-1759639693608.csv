@@ -1,0 +1,13 @@
+course_code,course_name,department,credit,semester,academic_year
+CSE4401,Data Structures,CSE,3,4,2025
+CSE4402,Data Structures Lab,CSE,1,4,2025
+CSE4503,Algorithms,CSE,3,5,2025
+MPE4101,Advanced Mathematics I,MPE,3,1,2025
+MPE4102,Advanced Mathematics I Lab,MPE,1,1,2025
+CEE4201,Structural Engineering I,CEE,3,2,2025
+CEE4202,Structural Engineering I Lab,CEE,1,2,2025
+EEE4301,Circuits I,EEE,3,3,2025
+EEE4302,Circuits I Lab,EEE,1,3,2025
+TVE4401,Teaching Methodology,TVE,2,4,2025
+TVE4402,Teaching Methodology Lab,TVE,1,4,2025
+

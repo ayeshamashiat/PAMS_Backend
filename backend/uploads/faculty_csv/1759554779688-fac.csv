@@ -1,0 +1,12 @@
+faculty_number,email,first_name,last_name,department,designation,specialization,research_interests
+F001,jane.doe@example.com,Jane,Doe,CSE,Professor,AI,Machine Learning; NLP
+F002,john.smith@example.com,John,Smith,EEE,Assistant Professor,Robotics,Control Systems; Automation
+F003,sara.khan@example.com,Sara,Khan,ME,Lecturer,Thermodynamics,Heat Transfer; Energy Systems
+F004,ali.haque@example.com,Ali,Haque,CE,Associate Professor,Structural Engineering,Bridge Design; Earthquake Engineering
+F005,mina.rahman@example.com,Mina,Rahman,TVE,Professor,Electronics,Embedded Systems; Signal Processing
+F006,omar.butt@example.com,Omar,Butt,CSE,Assistant Professor,Software Engineering,Web Development; Cloud Computing
+F007,leila.tanvir@example.com,Leila,Tanvir,EEE,Lecturer,Power Systems,Renewable Energy; Grid Management
+F008,farid.ahmed@example.com,Farid,Ahmed,ME,Professor,Manufacturing,Automation; CNC Machining
+F009,nadia.ismail@example.com,Nadia,Ismail,CE,Assistant Professor,Transportation,Traffic Flow; Urban Planning
+F010,karim.farooq@example.com,Karim,Farooq,TVE,Lecturer,Communication,Networking; IoT
+

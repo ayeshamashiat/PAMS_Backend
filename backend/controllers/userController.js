@@ -23,22 +23,27 @@ const createStudent = async (req, res) => {
       last_name,
       program_id, 
       department,
-      admission_year,
       supervisor_id
     } = req.body;
 
-    if (!student_number  || !email || !first_name || !last_name || !program_id || !department || !admission_year) {
+    if (!student_number || !email || !first_name || !last_name || !program_id || !department) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
+    // check if user or student already exists
     const existingUser = await User.findOne({ $or: [{ email }, { student_number }] });
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
     }
 
+    // enforce admission year = current year only
+    const currentYear = new Date().getFullYear();
+
+    // password generation + hashing
     const rawPassword = generatePassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
+    // create user
     const newUser = new User({
       email,
       password_hash: hashedPassword,
@@ -47,21 +52,25 @@ const createStudent = async (req, res) => {
       department,
       role: 'Student'
     });
-
     const savedUser = await newUser.save();
 
+    // create student with schema-aligned fields
     const student = new Student({
       user_id: savedUser._id,
-      student_number: student_number,
-      program_id: program_id,
-      supervisor_id: null,
-      admission_year: admission_year,
+      student_number,
+      program_id,
+      admission_year: currentYear, // enforce here
       current_semester: 1,
-      obtained_credits: 0
+      cgpa: 0.0,
+      total_credit_hours: 0,
+      obtained_credits: 0,
+      supervisor_id: supervisor_id || null,
+      status: 'Applied'
     });
 
     await student.save();
 
+    // email creds
     await sendEmail({
       email,
       subject: 'Your Student Account Credentials',
@@ -93,109 +102,146 @@ Admin Team`
   }
 };
 
-// controllers/userController.js (replace uploadStudentsFromCSV)
 const uploadStudentsFromCSV = async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded' });
+    return res.status(400).json({ message: "No file uploaded" });
   }
 
-  const filePath = req.file.path; // <-- define once
+  const filePath = req.file.path;
+  const results = [];
   const failed = [];
-  let total = 0;
-
-  // normalize helper
-  const pick = (obj, key) => (obj?.[key] ?? '').toString().trim();
-
-  const stream = fs.createReadStream(filePath).pipe(csv());
 
   try {
-    for await (const row of stream) {
-      total += 1;
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on("data", (data) => results.push(data))
+      .on("end", async () => {
+        for (const row of results) {
+          const {
+            student_number,
+            email,
+            first_name,
+            last_name,
+            program_id,
+            department,
+            supervisor_id
+          } = row;
 
-      const student_number = pick(row, 'student_number');
-      const email = pick(row, 'email').toLowerCase();
-      const first_name = pick(row, 'first_name');
-      const last_name = pick(row, 'last_name');
-      const program_id = pick(row, 'program_id');
-      const department = pick(row, 'department');
-      const admission_year = Number.parseInt(pick(row, 'admission_year'), 10);
+          // Validation: Check for required fields
+          if (!student_number || !email || !first_name || !last_name || !program_id || !department) {
+            failed.push({ student_number: student_number || "N/A", reason: "All fields are required" });
+            continue;
+          }
 
-      if (
-        !student_number || !email || !first_name || !last_name ||
-        !program_id || !department || !admission_year
-      ) {
-        failed.push({ student_number, reason: 'Missing required fields' });
-        continue;
-      }
+          try {
+            // Validate department against schema enum
+            const validDepartments = ['CSE', 'EEE', 'MPE', 'CEE', 'BTM'];
+            if (!validDepartments.includes(department)) {
+              failed.push({ student_number, reason: `Invalid department: ${department}` });
+              continue;
+            }
 
-      try {
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-          failed.push({ student_number, reason: 'User already exists' });
-          continue;
+            // Validate program_id against schema enum
+            const validPrograms = [
+              'M.Sc. CSE', 'M.Sc. CE', 'M.Sc. ME', 'M.Sc. EEE', 'M.Sc. TVE',
+              'M.Engg. CSE', 'M.Engg. ME', 'M.Engg. EEE', 'M.Engg. CE',
+              'PhD CSE', 'PhD ME', 'PhD CE', 'PhD EEE', 'PhD TE'
+            ];
+            if (!validPrograms.includes(program_id)) {
+              failed.push({ student_number, reason: `Invalid program_id: ${program_id}` });
+              continue;
+            }
+
+            // Check if user or student already exists
+            const existingUser = await User.findOne({ $or: [{ email }, { student_number }] });
+            if (existingUser) {
+              failed.push({ student_number, reason: "User already exists" });
+              continue;
+            }
+
+            // Enforce admission year as current year
+            const currentYear = new Date().getFullYear();
+
+            // Generate and hash password
+            const rawPassword = generatePassword();
+            const hashedPassword = await bcrypt.hash(rawPassword, 10);
+
+            // Create User
+            const newUser = new User({
+              email,
+              password_hash: hashedPassword,
+              first_name,
+              last_name,
+              department,
+              role: "Student"
+            });
+            const savedUser = await newUser.save();
+
+            // Create Student
+            const student = new Student({
+              user_id: savedUser._id,
+              student_number,
+              program_id,
+              admission_year: currentYear,
+              current_semester: 1,
+              cgpa: 0.0,
+              total_credit_hours: 0,
+              obtained_credits: 0,
+              supervisor_id: supervisor_id || null,
+              status: "Applied",
+              admission_date: currentYear,
+            });
+
+            await student.save();
+
+            // Send email with credentials
+            await sendEmail({
+              email,
+              subject: "Your Student Account Credentials",
+              message: `Dear ${first_name},
+
+              Your student account has been created.
+              Student Number: ${student_number}
+
+              Login credentials:
+              Email: ${email}
+              Password: ${rawPassword}
+
+              Please change your password after logging in.
+
+              Regards,
+              Admin Team`
+            });
+
+          } catch (err) {
+            console.error(`Error processing student ${student_number}:`, err);
+            failed.push({ student_number, reason: err.message });
+          }
         }
 
-        const rawPassword = generatePassword();
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+        // Delete the uploaded CSV file
+        fs.unlinkSync(filePath);
 
-        const savedUser = await new User({
-          email,
-          password_hash: hashedPassword,
-          first_name,
-          last_name,
-          department,
-          role: 'Student',
-        }).save();
-
-        await new Student({
-          user_id: savedUser._id,
-          student_number,
-          program_id,
-          admission_year,
-          current_semester: 1,
-          supervisor_id: null,
-          obtained_credits: 0,
-        }).save();
-
-        // Non-fatal email
-        sendEmail({
-          email,
-          subject: 'Your Student Account Credentials',
-          message: `Dear ${first_name},
-
-Your student account has been created.
-
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`,
-        }).catch(err => {
-          failed.push({ student_number, reason: `Created but email failed: ${err.message}` });
+        // Return response
+        return res.status(201).json({
+          message: "Bulk student upload completed",
+          total: results.length,
+          successful: results.length - failed.length,
+          failed: failed.length,
+          errors: failed
         });
-
-      } catch (err) {
-        failed.push({ student_number, reason: err.message });
-      }
-    }
-
-    return res.status(201).json({
-      message: 'Bulk student upload completed',
-      total,
-      failed: failed.length,
-      errors: failed,
-    });
-  } catch (err) {
-    return res.status(500).json({ message: 'Failed to process CSV', error: err.message });
-  } finally {
-    // Always attempt cleanup; never inside the csv-parser handler
-    try { await fs.promises.unlink(filePath); } catch {}
+      })
+      .on("error", (err) => {
+        console.error("CSV parsing error:", err);
+        fs.unlinkSync(filePath);
+        return res.status(500).json({ message: "Error processing CSV file" });
+      });
+  } catch (error) {
+    console.error("Upload students error:", error);
+    fs.unlinkSync(filePath);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
-
 
 const createFaculty = async (req, res) => {
   try {
@@ -363,105 +409,118 @@ Admin Team`
 };
 
 const createBulkFacultyFromCSV = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
+
+  const filePath = req.file.path;
+  const results = [];
+  const failed = [];
+
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'CSV file is required' });
-    }
+    fs.createReadStream(filePath)
+      .pipe(csv())
+      .on("data", (data) => results.push(data))
+      .on("end", async () => {
+        for (const row of results) {
+          const {
+            faculty_number,
+            email,
+            first_name,
+            last_name,
+            department,
+            designation,
+            specialization,
+            research_interests
+          } = row;
 
-    const filePath = req.file.path;
-    const rows = await parseCSV(filePath);
+          // Validation: Check for required fields
+          if (!faculty_number || !email || !first_name || !last_name || !designation || !department) {
+            failed.push({ faculty_number: faculty_number || "N/A", reason: "All fields are required" });
+            continue;
+          }
 
-    const results = [];
+          try {
+            const existingUser = await User.findOne({ $or: [{ email }, { faculty_number }] });
+            if (existingUser) {
+              failed.push({ faculty_number, reason: "User already exists" });
+              continue;
+            }
+            // Generate and hash password
+            const rawPassword = generatePassword();
+            const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-    for (const row of rows) {
-      const {
-        faculty_number,
-        email,
-        first_name,
-        last_name,
-        department,
-        designation,
-        specialization,
-        research_interests
-      } = row;
+            // Create User
+            const newUser = new User({
+              email,
+              password_hash: hashedPassword,
+              first_name,
+              last_name,
+              department,
+              role: "Faculty"
+            });
+            const savedUser = await newUser.save();
 
-      const result = { email, success: false, message: '' };
+            // Create Student
+            const newFaculty = new Faculty({
+              user_id: savedUser._id,
+              employee_id: faculty_number,
+              department_id: null, 
+              designation,
+              specialization: specialization || '',
+              research_interests: research_interests || '',
+              max_supervision_capacity: 5,
+              current_supervision_count: 0
+            });
 
-      // Validate required fields
-      if (!faculty_number || !email || !first_name || !last_name || !department || !designation) {
-        result.message = 'Missing required fields';
-        results.push(result);
-        continue;
-      }
+            await newFaculty.save();
 
-      try {
-        const existingUser = await User.findOne({ email }, {faculty_number});
-        if (existingUser) {
-          result.message = 'User already exists';
-          results.push(result);
-          continue;
+            // Send email with credentials
+            await sendEmail({
+              email,
+              subject: "Your Faculty Account Credentials",
+              message: `Dear ${first_name},
+
+              Your faculty account has been created.
+              Faculty Number: ${faculty_number}
+
+              Login credentials:
+              Email: ${email}
+              Password: ${rawPassword}
+
+              Please change your password after logging in.
+
+              Regards,
+              Admin Team`
+            });
+
+          } catch (err) {
+            console.error(`Error processing faculty ${faculty_number}:`, err);
+            failed.push({ faculty_number, reason: err.message });
+          }
         }
 
-        const rawPassword = generatePassword();
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
+        // Delete the uploaded CSV file
+        fs.unlinkSync(filePath);
 
-        const newUser = new User({
-          email,
-          password_hash: hashedPassword,
-          first_name,
-          last_name,
-          department,
-          role: 'Faculty'
+        // Return response
+        return res.status(201).json({
+          message: "Bulk faculty upload completed",
+          total: results.length,
+          successful: results.length - failed.length,
+          failed: failed.length,
+          errors: failed
         });
-
-        const savedUser = await newUser.save();
-
-        const newFaculty = new Faculty({
-          user_id: savedUser._id,
-          employee_id: faculty_number,
-          department_id: null, // optional
-          designation,
-          specialization: specialization || '',
-          research_interests: research_interests || '',
-          max_supervision_capacity: 5,
-          current_supervision_count: 0
-        });
-
-        await newFaculty.save();
-
-        await sendEmail({
-          email,
-          subject: 'Your Faculty Account Credentials',
-          message: `Dear ${first_name},
-
-Your faculty account has been created.
-Faculty Number: ${faculty_number}
-Login credentials:
-Email: ${email}
-Password: ${rawPassword}
-
-Please change your password after logging in.
-
-Regards,
-Admin Team`
-        });
-
-        result.success = true;
-        result.message = 'Faculty created and email sent';
-        results.push(result);
-
-      } catch (err) {
-        result.message = `Error: ${err.message}`;
-        results.push(result);
-      }
-    }
-
-    fs.unlinkSync(filePath); // Delete uploaded file after processing
-    res.status(207).json({ results });
-
+      })
+      .on("error", (err) => {
+        console.error("CSV parsing error:", err);
+        fs.unlinkSync(filePath);
+        return res.status(500).json({ message: "Error processing CSV file" });
+      });
   } catch (error) {
-    console.error('CSV upload error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Upload faculty error:", error);
+    fs.unlinkSync(filePath);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -716,17 +775,16 @@ const setMaxSupervisionCap = async (req, res) => {
 };
 
 const pushCoursesFromCSV = async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'No file uploaded' });
-  }
+  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
   const results = [];
-  const failed = [];
+  const failedUploads = [];
+  const previewAssignments = [];
 
   fs.createReadStream(req.file.path)
     .pipe(csv())
-    .on('data', (data) => results.push(data))
-    .on('end', async () => {
+    .on("data", (data) => results.push(data))
+    .on("end", async () => {
       for (const row of results) {
         const {
           course_code,
@@ -734,153 +792,238 @@ const pushCoursesFromCSV = async (req, res) => {
           department,
           credit,
           semester,
-          academic_year
+          academic_year,
         } = row;
 
-        // Check required fields
         if (!course_code || !course_name || !department || !credit || !semester || !academic_year) {
-          failed.push({ course_code: course_code || 'N/A', reason: 'Missing required fields' });
+          failedUploads.push({
+            course_code: course_code || "N/A",
+            reason: "Missing required fields",
+          });
           continue;
         }
 
         try {
-          // Check if course already exists
-          const existingCourse = await Course.findOne({ course_code });
-          if (existingCourse) {
-            failed.push({ course_code, reason: 'Course already exists' });
+          const existing = await Course.findOne({ course_code });
+          if (existing) {
+            failedUploads.push({ course_code, reason: "Already exists" });
             continue;
           }
 
-          // Save new course
           const newCourse = new Course({
-            course_code,
-            course_name,
-            department,
-            credit: Number(credit), 
-            semester,
-            academic_year
+            course_code: course_code.trim(),
+            course_name: course_name.trim(),
+            department: department.trim(),
+            credit: Number(credit),
+            semester: semester.trim(),
+            academic_year: academic_year.trim(),
+          });
+          await newCourse.save();
+
+          // Generate preview for this course, excluding already assigned students (though unlikely for new courses)
+          const extractedSemester = getSemesterFromCourseCode(newCourse.course_code);
+          if (extractedSemester === null) {
+            failedUploads.push({
+              course_code: newCourse.course_code,
+              reason: "Invalid course code format for semester extraction",
+            });
+            continue;
+          }
+
+          // Get IDs of students already assigned to this course (expected to be empty for new courses)
+          const assignedStudentIds = await StudentCourse.find({ course_id: newCourse._id }).distinct('student_id');
+
+          const students = await Student.find({
+            current_semester: extractedSemester,
+            _id: { $nin: assignedStudentIds }, // Exclude assigned students
+          }).populate("user_id");
+
+          const matchedStudents = students.filter(
+            (s) => s.user_id && s.user_id.department === newCourse.department
+          );
+
+          const proposedStudents = matchedStudents.map((s) => ({
+            student_id: s._id.toString(),
+            student_number: s.student_number,
+            name: `${s.user_id.first_name} ${s.user_id.last_name}`,
+            email: s.user_id.email || "N/A",
+          }));
+
+          previewAssignments.push({
+            course_id: newCourse._id.toString(),
+            course_code: newCourse.course_code,
+            extracted_semester: extractedSemester,
+            department: newCourse.department,
+            is_theory: isTheoryCourse(newCourse.course_code),
+            proposed_students: proposedStudents,
           });
 
-          await newCourse.save();
         } catch (err) {
-          failed.push({ course_code, reason: err.message });
+          failedUploads.push({ course_code, reason: err.message });
         }
       }
 
-      return res.status(201).json({
-        message: 'Bulk course upload completed',
-        total: results.length,
-        failed: failed.length,
-        errors: failed
+      const total = results.length;
+      const failedUploadCount = failedUploads.length;
+      const successUploadCount = total - failedUploadCount;
+
+      const courses = await Course.find();
+
+      res.status(201).json({
+        message: "Bulk course upload completed with assignment preview",
+        total,
+        successUploads: successUploadCount,
+        failedUploads: failedUploadCount,
+        uploadErrors: failedUploads,
+        previewAssignments,
+        courses,
       });
     });
 };
 
-function getSemesterFromCourseCode(code) {
-  const parts = code.split(" ");
-  if (parts.length < 2) return null;
-  const digits = parts[1];
-  return parseInt(digits[1]); 
-}
-
-const autoAssignCourses = async (req, res) => {
+const confirmAssignments = async (req, res) => {
   try {
-    const courses = await Course.find();
-    let created = 0, skipped = 0;
+    const { assignments } = req.body;
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      return res.status(400).json({ message: "Invalid assignments data" });
+    }
 
-    for (const course of courses) {
-      const semester = getSemesterFromCourseCode(course.course_code);
-      console.log(`📘 Course: ${course.course_code}, Dept: ${course.department}, Semester: ${semester}`);
+    let created = 0;
+    let skipped = 0;
+    const failed = [];
 
-      const students = await Student.find({ current_semester: semester }).populate("user_id");
-      console.log(`  Found ${students.length} students in semester ${semester}`);
+    for (const { course_id, assigned_students } of assignments) {
+      const course = await Course.findById(course_id);
+      if (!course) {
+        failed.push({ course_id, reason: "Course not found" });
+        continue;
+      }
 
-      const matchedStudents = students.filter(
-        (s) => s.user_id && s.user_id.department === course.department
-      );
-      console.log(`  Matched ${matchedStudents.length} students in dept ${course.department}`);
+      const extractedSemester = getSemesterFromCourseCode(course.course_code);
+      if (extractedSemester === null) {
+        failed.push({ course_id, reason: "Invalid course code for semester" });
+        continue;
+      }
 
-      for (const student of matchedStudents) {
+      for (const student_id of assigned_students) {
+        const student = await Student.findById(student_id).populate("user_id");
+        if (!student || !student.user_id) {
+          failed.push({ course_id, student_id, reason: "Student or user not found" });
+          continue;
+        }
+
+        // Validate department (from User) and semester match
+        if (student.user_id.department !== course.department || student.current_semester !== extractedSemester) {
+          failed.push({ 
+            course_id, 
+            student_id, 
+            reason: `Mismatch: Student dept '${student.user_id.department}' ≠ Course dept '${course.department}' or semester '${student.current_semester}' ≠ '${extractedSemester}'` 
+          });
+          continue;
+        }
+
         try {
           await StudentCourse.create({
             student_id: student._id,
             course_id: course._id,
-            semester,
-            academic_year: student.admission_year
+            semester: extractedSemester.toString(),
+            academic_year: student.admission_year.toString(),
+            // Optional: Add is_theory if schema supports
+            is_theory: isTheoryCourse(course.course_code),
           });
           created++;
         } catch (err) {
-            if (err.code === 11000) {
-              skipped++;
-              console.log(`⚠️ Duplicate: ${student._id} already has ${course._id}`);
-            } else {
-              console.error("❌ Insert error:", err);
-            }
+          if (err.code === 11000) {
+            skipped++;
+          } else {
+            failed.push({ course_id, student_id, reason: err.message });
           }
-
+        }
       }
     }
 
-    return res.status(200).json({ message: "Auto assignment completed", created, skipped });
+    return res.status(200).json({
+      message: "Assignments confirmed",
+      created,
+      skipped,
+      failedCount: failed.length,
+      errors: failed,
+    });
   } catch (err) {
-    console.error("❌ Auto-assign error:", err);
     return res.status(500).json({ message: err.message });
   }
 };
 
+function getSemesterFromCourseCode(code) {
+  if (!code || typeof code !== 'string' || code.length < 7) {
+    console.warn(`Invalid course code format: ${code}. Expected at least 7 characters.`);
+    return null;
+  }
+  
+  const semesterChar = code.charAt(4); // 0-based index 4 for 5th char
+  const semester = parseInt(semesterChar);
+  
+  if (isNaN(semester) || semester < 1 || semester > 20) {
+    console.warn(`Invalid semester in course code ${code}: '${semesterChar}' is not a valid semester number.`);
+    return null;
+  }
+  
+  return semester;
+}
 
-const assignCourseManually = async (req, res) => {
+function isTheoryCourse(code) {
+  if (!code || code.length < 7) return null;
+  const typeChar = code.charAt(6); // 0-based index 6 for 7th char
+  const typeNum = parseInt(typeChar);
+  if (isNaN(typeNum)) return null;
+  return typeNum % 2 === 1; // odd: true (theory), even: false (lab)
+}
+
+const generateAssignmentPreview = async (req, res) => {
   try {
-    const { student_id, course_id } = req.body;
-
-    // Student lookup (ObjectId or student_number)
-    let student;
-    try {
-      student = await Student.findById(student_id).populate("user_id");
-    } catch {
-      student = null;
-    }
-    if (!student) {
-      student = await Student.findOne({ student_number: student_id }).populate("user_id");
+    const { course_ids } = req.body;
+    if (!Array.isArray(course_ids) || course_ids.length === 0) {
+      return res.status(400).json({ message: "Invalid course IDs" });
     }
 
-    // Course lookup (ObjectId or course_code)
-    let course;
-    try {
-      course = await Course.findById(course_id);
-    } catch {
-      course = null;
-    }
-    if (!course) {
-      course = await Course.findOne({ course_code: course_id });
-    }
+    const previewAssignments = [];
+    for (const courseId of course_ids) {
+      const course = await Course.findById(courseId);
+      if (!course) continue;
 
-    if (!student || !course) {
-      return res.status(404).json({ message: "Student or course not found" });
-    }
+      const extractedSemester = getSemesterFromCourseCode(course.course_code);
+      if (extractedSemester === null) continue;
 
-    // Department check
-    if (student.user_id && course.department && student.user_id.department !== course.department) {
-      return res.status(400).json({ message: "Course department does not match student's department" });
-    }
+      // Get IDs of students already assigned to this course
+      const assignedStudentIds = await StudentCourse.find({ course_id: courseId }).distinct('student_id');
 
-    try {
-      const assignment = await StudentCourse.create({
-        student_id: student._id,
-        course_id: course._id,
+      const students = await Student.find({
+        current_semester: extractedSemester,
+        _id: { $nin: assignedStudentIds }, // Exclude assigned students
+      }).populate("user_id");
+
+      const matchedStudents = students.filter(
+        (s) => s.user_id && s.user_id.department === course.department
+      );
+
+      previewAssignments.push({
+        course_id: course._id.toString(),
+        course_code: course.course_code,
+        extracted_semester: extractedSemester,
+        department: course.department,
+        is_theory: isTheoryCourse(course.course_code),
+        proposed_students: matchedStudents.map((s) => ({
+          student_id: s._id.toString(),
+          student_number: s.student_number,
+          name: `${s.user_id.first_name} ${s.user_id.last_name}`,
+          email: s.user_id.email || "N/A",
+        })),
       });
-      return res.status(201).json(assignment);
-
-    } catch (err) {
-      if (err.code === 11000) {
-        return res.status(400).json({ message: "Course already assigned to this student" });
-      } else {
-        return res.status(500).json({ message: err.message });
-      }
     }
 
+    res.status(200).json({ previewAssignments });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -993,7 +1136,6 @@ const editObtainedCredits = async (req, res) => {
   }
 };
 
-
 module.exports = {
   createStudent,
   uploadStudentsFromCSV,
@@ -1006,12 +1148,12 @@ module.exports = {
   setMaxSupervisionCap,
   createBulkFacultyFromCSV,
   pushCoursesFromCSV,
-  autoAssignCourses,
-  assignCourseManually,
   updateProfile,
   getAllCourses,
   searchStudents,
   searchCourses,
   editCGPA,
-  editObtainedCredits
+  editObtainedCredits,
+  confirmAssignments,
+  generateAssignmentPreview
 };
