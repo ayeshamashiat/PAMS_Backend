@@ -14,7 +14,6 @@ const getUserIdFromToken = (token) => {
   }
 };
 
-// ✅ Create Supervisor Assignment Request
 const createAssignmentRequest = async (req, res) => {
   try {
     const { priorityFacultyIds } = req.body; // array of faculty IDs
@@ -80,17 +79,54 @@ const createAssignmentRequest = async (req, res) => {
 
 const getAvailableSupervisors = async (req, res) => {
   try {
-    const availableSupervisors = await Faculty.find({
-      $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] },
-    }).populate("user_id", "first_name last_name email");
+    // Validate token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
 
-    res.json({ availableSupervisors });
+    const token = authHeader.split(' ')[1];
+    const userId = getUserIdFromToken(token);
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    // Find student to get their department
+    const student = await Student.findOne({ user_id: userId }).populate('user_id', 'department');
+    if (!student) {
+      return res.status(404).json({ message: 'Student not found' });
+    }
+
+    const studentDepartment = student.user_id?.department;
+    if (!studentDepartment) {
+      return res.status(400).json({ message: 'Student department not found' });
+    }
+
+    // Fetch faculties with available capacity and matching department
+    const availableSupervisors = await Faculty.find({
+      $and: [
+        { $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] } },
+        { user_id: { $ne: null } }, // Ensure user_id is not null
+      ],
+    })
+      .populate({
+        path: 'user_id',
+        select: 'first_name last_name email department',
+        match: { department: studentDepartment }, // Match faculty department with student department
+      })
+      .lean();
+
+    // Filter out faculties where user_id is null after population
+    const filteredSupervisors = availableSupervisors.filter(faculty => faculty.user_id !== null);
+
+    res.json({ availableSupervisors: filteredSupervisors });
   } catch (err) {
+    console.error('Error fetching available supervisors:', err);
     res.status(500).json({ error: err.message });
   }
 };
 
 module.exports = {
   createAssignmentRequest,
-  getAvailableSupervisors,
+  getAvailableSupervisors
 };
