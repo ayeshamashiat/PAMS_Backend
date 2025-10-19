@@ -15,9 +15,10 @@ const supervisorAssignmentSchema = new mongoose.Schema({
   current_priority_index: { type: Number, default: 0 },
   overall_status: {
     type: String,
-    enum: ['Pending', 'Assigned', 'Failed'],
-    default: 'Pending'
+    enum: ["Requested", "Pending", "Approved", "Rejected", "PGCReview", "Assigned", "Failed"],
+    default: "Requested",
   },
+
   accepted_faculty: { type: mongoose.Schema.Types.ObjectId, ref: 'Faculty', default: null }, // ✅ cache
 }, { timestamps: true });
 
