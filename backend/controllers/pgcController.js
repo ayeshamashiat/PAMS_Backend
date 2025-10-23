@@ -5,93 +5,103 @@ const Student = require("../models/student");
 const Faculty = require("../models/faculty");
 const StudentCourse = require("../models/studentCourse");
 const User = require("../models/user");
-const listPGCThesisProposals = async (req, res) => {
-  try {
-    const statuses = String(req.query.status || "Approved")
-      .split(",")
-      .map((s) => s.trim());
-
-    const proposals = await ThesisProposal.find({ status: { $in: statuses } })
-      .populate({
-        path: "student_id",
-        populate: [
-          { path: "user_id", select: "first_name last_name email" },
-          { path: "program_id", select: "program_name degree_type" },
-        ],
-      })
-      .populate({
-        path: "supervisor_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
-      })
-      .sort({ createdAt: -1 });
-
-    res.json({ proposals });
-  } catch (error) {
-    console.error("PGC list proposals error:", error);
-    res.status(500).json({ message: error.message });
-  }
-};
+const mongoose = require("mongoose");
+const ThesisProgress = require("../models/thesisProgress");
 
 const pgcRespond = async (req, res) => {
   try {
-    const { assignmentId, response } = req.body; // response: 'Accepted' or 'Rejected'
-    const assignment = await SupervisorAssignment.findById(assignmentId);
+    const { assignmentId, response } = req.body; // 'Accepted' or 'Rejected'
+
+    const assignment = await SupervisorAssignment.findById(assignmentId)
+      .populate("student_id")
+      .populate("priority_list.faculty_id");
+
     if (!assignment)
       return res.status(404).json({ message: "Assignment not found." });
 
     const idx = assignment.current_priority_index;
-    if (assignment.priority_list[idx].status !== "SupervisorAccepted") {
+    const currentFacultyEntry = assignment.priority_list[idx];
+
+    if (!currentFacultyEntry || currentFacultyEntry.status !== "SupervisorAccepted") {
       return res
         .status(400)
-        .json({ message: "Supervisor has not accepted yet." });
+        .json({ message: "Supervisor has not accepted yet or invalid priority index." });
     }
 
+    const studentId = assignment.student_id._id;
+
     if (response === "Accepted") {
+      // ✅ PGC approves supervisor
       assignment.priority_list[idx].status = "PGCAccepted";
       assignment.overall_status = "Assigned";
-      // Set the accepted faculty
-      assignment.accepted_faculty = assignment.priority_list[idx].faculty_id;
-      const student = assignment.student_id;
-      student.supervisor_id = assignment.accepted_faculty;
+      assignment.accepted_faculty = currentFacultyEntry.faculty_id;
 
-      sendNotification(assignment.student_id, "Supervisor assigned!");
-
-      // Update student's supervisor_id
-      await Student.findByIdAndUpdate(assignment.student_id, {
-        supervisor_id: assignment.priority_list[idx].faculty_id,
+      // Update student supervisor info
+      await Student.findByIdAndUpdate(studentId, {
+        supervisor_id: currentFacultyEntry.faculty_id,
       });
 
-      // Increment faculty's current supervision count
+      // Increment faculty load
       await Faculty.findByIdAndUpdate(
-        assignment.priority_list[idx].faculty_id,
+        currentFacultyEntry.faculty_id,
         { $inc: { current_supervision_count: 1 } }
       );
+
+      // Update or create ThesisProgress
+      let progress = await ThesisProgress.findOne({ student: studentId });
+      if (!progress) {
+        progress = new ThesisProgress({
+          student: studentId,
+          current_stage: "Supervisor Assignment",
+          unlocked_stages: ["Enrolled", "Supervisor Assignment"],
+          is_active: true,
+        });
+      } else {
+        await progress.unlockStage("Supervisor Assignment");
+      }
+
+      await progress.save();
+
+      sendNotification(studentId, "Your supervisor has been officially assigned by PGC.");
     } else {
+      // ❌ PGC rejects supervisor
       assignment.priority_list[idx].status = "PGCRejected";
       assignment.current_priority_index += 1;
       assignment.accepted_faculty = null;
+
+      // Reset thesis progress
+      await ThesisProgress.findOneAndUpdate(
+        { student: studentId },
+        { current_stage: "Enrolled", unlocked_stages: ["Enrolled"] },
+        { upsert: true }
+      );
+
       if (assignment.current_priority_index < assignment.priority_list.length) {
-        assignment.priority_list[assignment.current_priority_index].status =
-          "Requested";
+        // Move to next faculty
+        assignment.priority_list[assignment.current_priority_index].status = "Requested";
         sendNotification(
-          assignment.priority_list[assignment.current_priority_index]
-            .faculty_id,
+          assignment.priority_list[assignment.current_priority_index].faculty_id,
           "You have a new supervision request."
         );
       } else {
-        assignment.overall_status = "Failed";
+        // No more faculty left — manual intervention needed
+        assignment.overall_status = "PGCReview";
         sendNotification(
-          assignment.student_id,
-          "PGC rejected all supervisors. Will assign manually."
+          studentId,
+          "PGC rejected all supervisor options. You will be assigned manually."
         );
       }
     }
+
     await assignment.save();
-    res.json({ message: "PGC response recorded.", assignment });
+    res.json({ message: "PGC response recorded successfully.", assignment });
+
   } catch (error) {
+    console.error("Error in pgcRespond:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
 
 const pgcManualAssign = async (req, res) => {
   try {
@@ -121,29 +131,99 @@ const pgcManualAssign = async (req, res) => {
   }
 };
 
+const getPGCManualAssign = async (req, res) => {
+  try {
+    const assignments = await SupervisorAssignment.find({
+      overall_status: "PGCReview",
+    })
+      .populate({
+        path: "student_id",
+        populate: {
+          path: "user_id",
+          select: "first_name last_name email department",
+        },
+      });
+
+    res.json({ assignments });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const getPGCManualAssignmentsWithSupervisors = async (req, res) => {
+  try {
+    // Step 1: Get all students waiting for PGC manual assignment
+    const assignments = await SupervisorAssignment.find({ overall_status: "PGCReview" })
+      .populate({
+        path: "student_id",
+        populate: [
+          { path: "user_id", select: "first_name last_name email department" },
+          { path: "program_id", select: "program_name degree_type" },
+        ],
+      })
+      .lean(); // ✅ improves performance since we’ll modify objects later
+
+    // Step 2: For each student, find available supervisors from the same department
+    const results = await Promise.all(
+      assignments.map(async (assignment) => {
+        const student = assignment.student_id;
+        if (!student || !student.user_id?.department) {
+          return { ...assignment, available_supervisors: [] };
+        }
+
+        const studentDept = student.user_id.department;
+
+        // Find available supervisors in the same department
+        const supervisors = await Faculty.find({
+          $expr: { $gt: ["$max_supervision_capacity", "$current_supervision_count"] },
+        })
+          .populate({
+            path: "user_id",
+            select: "first_name last_name email department",
+            match: { department: studentDept },
+          })
+          .lean();
+
+        // Filter out any null user references after population
+        const availableSupervisors = supervisors.filter(s => s.user_id !== null);
+
+        return {
+          ...assignment,
+          available_supervisors: availableSupervisors,
+        };
+      })
+    );
+
+    res.json({ assignments: results });
+  } catch (err) {
+    console.error("Error fetching PGC manual assignments:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // NEW: Get proposals waiting for PGC review (supervisor already approved)
 const getPendingProposals = async (req, res) => {
   try {
     // Find proposals that supervisor approved but PGC hasn't reviewed yet
-    const proposals = await ThesisProposal.find({
-      status: "Approved", // Supervisor approved, waiting for PGC
+    const proposals = await ThesisProposal.find({ 
+      status: "Approved" // Supervisor approved, waiting for PGC
     })
-      .populate({
-        path: "student_id",
-        populate: [
-          { path: "user_id", select: "first_name last_name email" },
-          { path: "program_id", select: "program_name degree_type" },
-        ],
-      })
-      .populate({
-        path: "supervisor_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
-      })
-      .sort({ createdAt: -1 }); // Most recent first
+    .populate({
+      path: 'student_id',
+      populate: [
+        { path: 'user_id', select: 'first_name last_name email' },
+        { path: 'program_id', select: 'program_name degree_type' }
+      ]
+    })
+    .populate({
+      path: 'supervisor_id',
+      populate: { path: 'user_id', select: 'first_name last_name email' }
+    })
+    .sort({ createdAt: -1 }); // Most recent first
 
     res.json({ proposals });
   } catch (error) {
-    console.error("Error fetching pending proposals:", error);
+    console.error('Error fetching pending proposals:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -152,25 +232,25 @@ const getPendingProposals = async (req, res) => {
 const getApprovedProposals = async (req, res) => {
   try {
     // Find proposals that PGC has approved
-    const proposals = await ThesisProposal.find({
-      status: "PGCApproved",
+    const proposals = await ThesisProposal.find({ 
+      status: "PGCApproved" 
     })
-      .populate({
-        path: "student_id",
-        populate: [
-          { path: "user_id", select: "first_name last_name email" },
-          { path: "program_id", select: "program_name degree_type" },
-        ],
-      })
-      .populate({
-        path: "supervisor_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
-      })
-      .sort({ updatedAt: -1 }); // Most recently approved first
+    .populate({
+      path: 'student_id',
+      populate: [
+        { path: 'user_id', select: 'first_name last_name email' },
+        { path: 'program_id', select: 'program_name degree_type' }
+      ]
+    })
+    .populate({
+      path: 'supervisor_id',
+      populate: { path: 'user_id', select: 'first_name last_name email' }
+    })
+    .sort({ updatedAt: -1 }); // Most recently approved first
 
     res.json({ proposals });
   } catch (error) {
-    console.error("Error fetching approved proposals:", error);
+    console.error('Error fetching approved proposals:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -178,36 +258,33 @@ const getApprovedProposals = async (req, res) => {
 // UPDATED: Enhanced PGC review proposal function
 const pgcReviewProposal = async (req, res) => {
   try {
-    const { proposalId, feedback = "", status } = req.body;
+    const { proposalId, feedback = '', status } = req.body;
 
     // Validate inputs
     if (!proposalId) {
       return res.status(400).json({ message: "Proposal ID is required." });
     }
 
-    const validStatuses = ["Approved", "Rejected", "Comment"];
+    const validStatuses = ['Approved', 'Rejected', 'Comment'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        message:
-          "Invalid status. Must be 'Approved', 'Rejected', or 'Comment'.",
-      });
+      return res.status(400).json({ message: "Invalid status. Must be 'Approved', 'Rejected', or 'Comment'." });
     }
 
     // Find the proposal
-    const proposal = await ThesisProposal.findById(proposalId).populate({
-      path: "student_id",
-      populate: { path: "user_id", select: "first_name last_name email" },
-    });
+    const proposal = await ThesisProposal.findById(proposalId)
+      .populate({
+        path: 'student_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
+      });
 
     if (!proposal) {
       return res.status(404).json({ message: "Proposal not found." });
     }
 
     // Check if proposal is in correct state for PGC review
-    if (proposal.status !== "Approved" && status !== "Comment") {
-      return res.status(400).json({
-        message:
-          "Proposal must be supervisor-approved before PGC can review it.",
+    if (proposal.status !== "Approved" && status !== 'Comment') {
+      return res.status(400).json({ 
+        message: "Proposal must be supervisor-approved before PGC can review it." 
       });
     }
 
@@ -221,41 +298,43 @@ const pgcReviewProposal = async (req, res) => {
       feedback,
       status,
       date: new Date(),
-      reviewedBy: "pgc",
+      reviewedBy: 'pgc'
     });
 
     // Update proposal status based on PGC decision
-    if (status === "Approved") {
-      proposal.status = "PGCApproved";
-      proposal.feedback = feedback || "Approved by PGC";
-
+    if (status === 'Approved') {
+      proposal.status = 'PGCApproved';
+      proposal.feedback = feedback || 'Approved by PGC';
+      
       // Send notification to student
       sendNotification(
         proposal.student_id._id,
         "Congratulations! Your thesis proposal has been approved by PGC."
       );
-
+      
       // Send notification to supervisor
       sendNotification(
         proposal.supervisor_id,
         `Thesis proposal for ${proposal.student_id.user_id.first_name} ${proposal.student_id.user_id.last_name} has been approved by PGC.`
       );
-    } else if (status === "Rejected") {
-      proposal.status = "PGCRejected";
-      proposal.feedback = feedback || "Rejected by PGC";
 
+    } else if (status === 'Rejected') {
+      proposal.status = 'PGCRejected';
+      proposal.feedback = feedback || 'Rejected by PGC';
+      
       // Send notification to student
       sendNotification(
         proposal.student_id._id,
         "Your thesis proposal has been rejected by PGC. Please revise and resubmit."
       );
-
+      
       // Send notification to supervisor
       sendNotification(
         proposal.supervisor_id,
         `Thesis proposal for ${proposal.student_id.user_id.first_name} ${proposal.student_id.user_id.last_name} has been rejected by PGC.`
       );
-    } else if (status === "Comment") {
+
+    } else if (status === 'Comment') {
       // Just add comment, don't change status
       proposal.feedback = feedback;
     }
@@ -265,102 +344,34 @@ const pgcReviewProposal = async (req, res) => {
     // Return updated proposal with populated fields
     const updatedProposal = await ThesisProposal.findById(proposalId)
       .populate({
-        path: "student_id",
+        path: 'student_id',
         populate: [
-          { path: "user_id", select: "first_name last_name email" },
-          { path: "program_id", select: "program_name degree_type" },
-        ],
+          { path: 'user_id', select: 'first_name last_name email' },
+          { path: 'program_id', select: 'program_name degree_type' }
+        ]
       })
       .populate({
-        path: "supervisor_id",
-        populate: { path: "user_id", select: "first_name last_name email" },
+        path: 'supervisor_id',
+        populate: { path: 'user_id', select: 'first_name last_name email' }
       });
 
-    res.json({
-      message: `Proposal ${status.toLowerCase()} successfully.`,
-      proposal: updatedProposal,
+    res.json({ 
+      message: `Proposal ${status.toLowerCase()} successfully.`, 
+      proposal: updatedProposal 
     });
+
   } catch (error) {
-    console.error("PGC review proposal error:", error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-const getSupervisorLoadReport = async (req, res) => {
-  try {
-    const faculties = await Faculty.find().populate(
-      "user_id",
-      "first_name last_name"
-    );
-
-    const report = [];
-    for (const faculty of faculties) {
-      const supervisedCount = await Student.countDocuments({
-        supervisor_id: faculty._id,
-      });
-
-      report.push({
-        faculty: faculty.user_id
-          ? `${faculty.user_id.first_name} ${faculty.user_id.last_name}`
-          : "Unknown Faculty",
-        current_supervision_count: supervisedCount,
-        max_supervision_capacity: faculty.max_supervision_capacity,
-        utilization_percentage:
-          faculty.max_supervision_capacity > 0
-            ? Math.round(
-                (supervisedCount / faculty.max_supervision_capacity) * 100
-              )
-            : 0,
-      });
-    }
-
-    res.json(report);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-const getStudentProgressReport = async (req, res) => {
-  try {
-    const students = await Student.find()
-      .populate("user_id", "first_name last_name email")
-      .populate("program_id", "program_name");
-
-    const report = [];
-    for (const student of students) {
-      const courses = await StudentCourse.find({ student_id: student._id });
-      const totalCredits = courses.reduce(
-        (sum, c) => sum + (c.obtained_credit || 0),
-        0
-      );
-
-      report.push({
-        student_name: student.user_id
-          ? `${student.user_id.first_name} ${student.user_id.last_name}`
-          : "Unknown Student",
-        student_number: student.student_number,
-        program: student.program_id?.program_name || "Unknown Program",
-        cgpa: student.cgpa,
-        totalCredits,
-        email: student.user_id?.email,
-      });
-    }
-
-    res.json(report);
-  } catch (error) {
+    console.error('PGC review proposal error:', error);
     res.status(500).json({ error: error.message });
   }
 };
 
 const getPGCSupervisionRequests = async (req, res) => {
   try {
-    // Find assignments where the current priority supervisor has accepted
     const assignments = await SupervisorAssignment.find({
       $expr: {
         $eq: [
-          {
-            $arrayElemAt: ["$priority_list.status", "$current_priority_index"],
-          },
+          { $arrayElemAt: ["$priority_list.status", "$current_priority_index"] },
           "SupervisorAccepted",
         ],
       },
@@ -382,10 +393,9 @@ const getPGCSupervisionRequests = async (req, res) => {
         path: "priority_list.faculty_id",
         populate: {
           path: "user_id",
-          select: "first_name last_name email department",
+          select: "first_name last_name email department"
         },
-        select:
-          "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity",
+        select: "employee_id designation specialization research_interests current_supervision_count max_supervision_capacity",
       });
 
     res.json({ assignments });
@@ -454,16 +464,131 @@ const getPGCProfile = async (req, res) => {
   }
 };
 
+const getAvailableSupervisors = async (req, res) => {
+  try {
+    const { studentId } = req.query; // 👈 ensure frontend sends this
+    if (!studentId)
+      return res.status(400).json({ message: "Student ID is required" });
+
+    // Verify student exists in manual assignment (PGCReview)
+    const assignment = await SupervisorAssignment.findOne({
+      student_id: new mongoose.Types.ObjectId(studentId),
+      overall_status: "PGCReview",
+    });
+    if (!assignment)
+      return res.status(404).json({
+        message: "No PGCReview assignment found for this student",
+      });
+
+    // Get student + department
+    const student = await Student.findById(studentId).populate(
+      "user_id",
+      "department"
+    );
+    if (!student)
+      return res.status(404).json({ message: "Student not found" });
+
+    const studentDept = student.user_id?.department;
+    if (!studentDept)
+      return res
+        .status(400)
+        .json({ message: "Student department not found" });
+
+    // Get available supervisors in same department
+    const faculties = await Faculty.find({
+      $expr: { $lt: ["$current_supervision_count", "$max_supervision_capacity"] },
+    })
+      .populate({
+        path: "user_id",
+        match: { department: studentDept },
+        select: "first_name last_name email department",
+      })
+      .lean();
+
+    const filtered = faculties.filter((f) => f.user_id !== null);
+
+    res.json({ supervisors: filtered });
+  } catch (err) {
+    console.error("Error in getAvailableSupervisors:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const assignSupervisorManually = async (req, res) => {
+  try {
+    const { studentId, supervisorId } = req.body;
+
+    if (!studentId || !supervisorId)
+      return res.status(400).json({ message: "Student ID and Supervisor ID are required." });
+
+    // Find or create supervisor assignment entry
+    let assignment = await SupervisorAssignment.findOne({ student_id: studentId });
+
+    if (!assignment) {
+      assignment = new SupervisorAssignment({
+        student_id: studentId,
+        priority_list: [],
+        overall_status: "PGCReview",
+      });
+    }
+
+    // Update the assignment directly
+    assignment.priority_list.push({
+      faculty_id: supervisorId,
+      status: "PGCAccepted",
+    });
+    assignment.accepted_faculty = supervisorId;
+    assignment.overall_status = "Assigned";
+
+    // Update student supervisor info
+    await Student.findByIdAndUpdate(studentId, { supervisor_id: supervisorId });
+
+    // Increment faculty’s supervision count
+    await Faculty.findByIdAndUpdate(supervisorId, {
+      $inc: { current_supervision_count: 1 },
+    });
+
+    // Create or update thesis progress
+    let progress = await ThesisProgress.findOne({ student: studentId });
+    if (!progress) {
+      progress = new ThesisProgress({
+        student: studentId,
+        current_stage: "Supervisor Assignment",
+        unlocked_stages: ["Enrolled", "Supervisor Assignment"],
+        is_active: true,
+      });
+    } else {
+      await progress.unlockStage("Supervisor Assignment");
+    }
+
+    await progress.save();
+    await assignment.save();
+
+    sendNotification(studentId, "PGC has manually assigned your supervisor.");
+    sendNotification(supervisorId, "You have been assigned a new supervisee by PGC.");
+
+    res.json({
+      message: "Supervisor assigned successfully by PGC.",
+      assignment,
+    });
+  } catch (error) {
+    console.error("Error in assignSupervisor:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
 module.exports = {
   pgcRespond,
   pgcManualAssign,
   pgcReviewProposal,
   getPendingProposals,
   getApprovedProposals,
-  getStudentProgressReport,
-  getSupervisorLoadReport,
   getPGCSupervisionRequests,
   getPGCAssignedSupervisors,
   getPGCProfile,
-  listPGCThesisProposals,
+  getPGCManualAssign,
+  getAvailableSupervisors,
+  assignSupervisorManually,
+  getPGCManualAssignmentsWithSupervisors
 };
