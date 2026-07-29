@@ -15,6 +15,7 @@ const getFacultyProfile = async (req, res) => {
     if (!faculty) return res.status(404).json({ message: "Faculty profile not found" });
 
     res.status(200).json({
+      faculty_number: faculty.employee_id,
       first_name: user.first_name,
       last_name: user.last_name,
       email: user.email,
@@ -292,6 +293,8 @@ const getAcceptedSupervisionStudents = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
 
 module.exports = {
   getSupervisedStudents,

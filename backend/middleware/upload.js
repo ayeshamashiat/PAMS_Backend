@@ -11,15 +11,17 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // Allow PDF for thesis proposal, CSV for student bulk upload
   const ext = path.extname(file.originalname).toLowerCase();
-  if (
-    (req.baseUrl.includes('/students') && req.url.includes('/submit/check') && ext === '.pdf') ||
-    ext === '.csv'
-  ) {
+  if
+    (
+      // allow student proposal PDF upload
+      (req.baseUrl.includes('/students') && req.url.includes('/submit/check') && ext === '.pdf') ||
+      // allow thesis upload PDF (route uses /thesis/upload)
+      (req.baseUrl.includes('/thesis') && req.url.includes('/upload') && ext === '.pdf')
+    ) {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF files are allowed for thesis proposal, and CSV for bulk upload'), false);
+    cb(new Error('Only PDF files are allowed'), false);
   }
 };
 

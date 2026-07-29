@@ -9,7 +9,10 @@ const thesisProposalSchema = new mongoose.Schema({
   objective: { type: String, required: true },
   methodology: { type: String, required: true },
   estimated_cost: { type: String },
-  timeline: { type: String },
+  timeline: {
+    startDate: { type: Date },
+    endDate: { type: Date }
+  },
   references: { type: String },
   attachment: { type: String },
   status: {
