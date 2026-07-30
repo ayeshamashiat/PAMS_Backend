@@ -13,6 +13,7 @@ const facultyRoutes = require('./routes/facultyRoutes');
 const pgcRoutes = require('./routes/pgcRoutes');
 const bodyParser = require('body-parser');
 const path = require("path");
+const thesisRoutes
 
 
 dotenv.config();
